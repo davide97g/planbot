@@ -30,7 +30,7 @@ export async function handleAtlassianConnect(
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("prompt", "consent");
 
-  return Response.redirect(authUrl.toString(), 302);
+  return Response.json({ url: authUrl.toString() });
 }
 
 /**
@@ -195,4 +195,12 @@ export async function getAtlassianAccessToken(
 export async function hasAtlassianToken(userId: string, env: Env): Promise<boolean> {
   const raw = await env.PLANBOT_CONFIG.get(kvKey(userId));
   return raw !== null;
+}
+
+/**
+ * Removes the stored Atlassian token for a user.
+ * Called by the DELETE /api/auth/atlassian/token route in router.ts.
+ */
+export async function disconnectAtlassian(userId: string, env: Env): Promise<void> {
+  await env.PLANBOT_CONFIG.delete(kvKey(userId));
 }
