@@ -219,6 +219,7 @@ export function createOrchestrator(): Agent {
           // Build a sub-context: inject the delegation task as a user message
           const subContext: AgentContext = {
             env: context.env,
+            userId: context.userId,
             conversationId: context.conversationId,
             messages: [
               // Carry over conversation history for context
