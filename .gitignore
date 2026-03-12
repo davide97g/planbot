@@ -3,6 +3,8 @@ dist/
 .dev.vars
 .wrangler/
 *.log
-.env.worktrees/
+.worktrees/
 
 .env
+
+.superpowers
