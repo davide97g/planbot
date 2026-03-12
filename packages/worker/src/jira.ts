@@ -3,8 +3,10 @@ import type { Env, JiraIssue } from "./types";
 const MAX_RESULTS = 100;
 const MAX_ISSUES = 200;
 
-function authHeader(env: Env): string {
-  return "Basic " + btoa(`${env.JIRA_EMAIL}:${env.JIRA_API_TOKEN}`);
+type AtlassianAuth = { accessToken: string; cloudId: string };
+
+function authHeader(token: string): string {
+  return `Bearer ${token}`;
 }
 
 interface JiraSearchResponse {
@@ -64,7 +66,11 @@ export function mapIssue(raw: JiraRawIssue): JiraIssue {
   };
 }
 
-export async function searchIssues(jql: string, env: Env): Promise<JiraIssue[]> {
+export async function searchIssues(
+  jql: string,
+  env: Env,
+  auth: AtlassianAuth,
+): Promise<JiraIssue[]> {
   const issues: JiraIssue[] = [];
   let startAt = 0;
 
@@ -75,7 +81,7 @@ export async function searchIssues(jql: string, env: Env): Promise<JiraIssue[]> 
   ];
 
   while (issues.length < MAX_ISSUES) {
-    const url = new URL(`${env.JIRA_BASE_URL}/rest/api/3/search/jql`);
+    const url = new URL(`https://api.atlassian.com/ex/jira/${auth.cloudId}/rest/api/3/search/jql`);
     url.searchParams.set("jql", jql);
     url.searchParams.set("startAt", String(startAt));
     url.searchParams.set("maxResults", String(MAX_RESULTS));
@@ -83,7 +89,7 @@ export async function searchIssues(jql: string, env: Env): Promise<JiraIssue[]> 
 
     const res = await fetch(url.toString(), {
       headers: {
-        Authorization: authHeader(env),
+        Authorization: authHeader(auth.accessToken),
         Accept: "application/json",
       },
     });
@@ -107,10 +113,17 @@ export async function searchIssues(jql: string, env: Env): Promise<JiraIssue[]> 
   return issues;
 }
 
-export function issuesByFixVersion(version: string, env: Env): Promise<JiraIssue[]> {
-  return searchIssues(`fixVersion = "${version}"`, env);
+export function issuesByFixVersion(
+  version: string,
+  env: Env,
+  auth: AtlassianAuth,
+): Promise<JiraIssue[]> {
+  return searchIssues(`fixVersion = "${version}"`, env, auth);
 }
 
-export function issuesByActiveSprint(env: Env): Promise<JiraIssue[]> {
-  return searchIssues("sprint in openSprints()", env);
+export function issuesByActiveSprint(
+  env: Env,
+  auth: AtlassianAuth,
+): Promise<JiraIssue[]> {
+  return searchIssues("sprint in openSprints()", env, auth);
 }

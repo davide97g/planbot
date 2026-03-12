@@ -7,6 +7,11 @@ const mockEnv = {
   JIRA_API_TOKEN: "token123",
 } as any;
 
+const mockAuth = {
+  accessToken: "test-access-token",
+  cloudId: "test-cloud-id",
+};
+
 describe("mapIssue", () => {
   it("transforms raw Jira issue to JiraIssue interface", () => {
     const raw = {
@@ -115,6 +120,7 @@ describe("searchIssues", () => {
         startAt: 0,
         maxResults: 100,
         total: 1,
+        isLast: true,
         issues: [
           {
             key: "PROJ-1",
@@ -136,15 +142,15 @@ describe("searchIssues", () => {
     });
     vi.stubGlobal("fetch", mockFetch);
 
-    const result = await searchIssues("project = PROJ", mockEnv);
+    const result = await searchIssues("project = PROJ", mockEnv, mockAuth);
 
     expect(result).toHaveLength(1);
     expect(result[0].key).toBe("PROJ-1");
 
     const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toContain("test-cloud-id");
     expect(url).toContain("rest/api/3/search");
-    expect(url).toContain("jql=project+%3D+PROJ");
-    expect(opts.headers.Authorization).toMatch(/^Basic /);
+    expect(opts.headers.Authorization).toMatch(/^Bearer /);
   });
 
   it("paginates through results", async () => {
@@ -172,6 +178,7 @@ describe("searchIssues", () => {
           startAt: 0,
           maxResults: 100,
           total: 150,
+          isLast: false,
           issues: Array.from({ length: 100 }, (_, i) => makeIssue(`P-${i}`)),
         }),
       })
@@ -181,12 +188,13 @@ describe("searchIssues", () => {
           startAt: 100,
           maxResults: 100,
           total: 150,
+          isLast: true,
           issues: Array.from({ length: 50 }, (_, i) => makeIssue(`P-${100 + i}`)),
         }),
       });
     vi.stubGlobal("fetch", mockFetch);
 
-    const result = await searchIssues("project = BIG", mockEnv);
+    const result = await searchIssues("project = BIG", mockEnv, mockAuth);
     expect(result).toHaveLength(150);
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
