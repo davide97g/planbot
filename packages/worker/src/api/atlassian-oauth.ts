@@ -7,7 +7,7 @@ function kvKey(userId: string): string {
 }
 
 /**
- * Redirects user to Atlassian authorization page.
+ * Returns a JSON body containing the Atlassian authorization URL for the frontend to navigate to.
  * GET /api/auth/atlassian/connect
  */
 export async function handleAtlassianConnect(
