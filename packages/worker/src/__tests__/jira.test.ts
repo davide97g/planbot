@@ -149,7 +149,7 @@ describe("searchIssues", () => {
 
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toContain("test-cloud-id");
-    expect(url).toContain("rest/api/3/search");
+    expect(url).toContain("rest/api/3/search/jql");
     expect(opts.headers.Authorization).toMatch(/^Bearer /);
   });
 
@@ -175,19 +175,14 @@ describe("searchIssues", () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          startAt: 0,
-          maxResults: 100,
-          total: 150,
           isLast: false,
+          nextPageToken: "cursor-page-2",
           issues: Array.from({ length: 100 }, (_, i) => makeIssue(`P-${i}`)),
         }),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          startAt: 100,
-          maxResults: 100,
-          total: 150,
           isLast: true,
           issues: Array.from({ length: 50 }, (_, i) => makeIssue(`P-${100 + i}`)),
         }),

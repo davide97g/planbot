@@ -11,7 +11,8 @@ function authHeader(token: string): string {
 
 interface JiraSearchResponse {
   issues: JiraRawIssue[];
-  isLast: boolean;
+  isLast?: boolean;
+  nextPageToken?: string;
 }
 
 interface JiraRawIssue {
@@ -72,7 +73,7 @@ export async function searchIssues(
   auth: AtlassianAuth,
 ): Promise<JiraIssue[]> {
   const issues: JiraIssue[] = [];
-  let startAt = 0;
+  let nextPageToken: string | undefined;
 
   const fields = [
     "summary", "assignee", "customfield_10016", "status", "issuetype",
@@ -81,11 +82,13 @@ export async function searchIssues(
   ];
 
   while (issues.length < MAX_ISSUES) {
-    const url = new URL(`https://api.atlassian.com/ex/jira/${auth.cloudId}/rest/api/3/search`);
+    const url = new URL(`https://api.atlassian.com/ex/jira/${auth.cloudId}/rest/api/3/search/jql`);
     url.searchParams.set("jql", jql);
-    url.searchParams.set("startAt", String(startAt));
     url.searchParams.set("maxResults", String(MAX_RESULTS));
     url.searchParams.set("fields", fields.join(","));
+    if (nextPageToken) {
+      url.searchParams.set("nextPageToken", nextPageToken);
+    }
 
     const res = await fetch(url.toString(), {
       headers: {
@@ -103,11 +106,11 @@ export async function searchIssues(
       issues.push(mapIssue(raw));
     }
 
-    if (data.isLast || data.issues.length === 0) {
+    if (data.isLast || !data.nextPageToken || data.issues.length === 0) {
       break;
     }
 
-    startAt += data.issues.length;
+    nextPageToken = data.nextPageToken;
   }
 
   return issues;
