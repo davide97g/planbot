@@ -35,6 +35,7 @@ const excelToolNames = new Set(excelTools.map((t) => t.name));
 export async function executeToolCall(
   toolCall: ToolCall,
   env: Env,
+  userId?: string,
 ): Promise<ToolResult> {
   const { id, name, arguments: args } = toolCall;
 
@@ -42,9 +43,9 @@ export async function executeToolCall(
     let result: unknown;
 
     if (jiraToolNames.has(name)) {
-      result = await executeJiraTool(name, args, env);
+      result = await executeJiraTool(name, args, env, userId);
     } else if (confluenceToolNames.has(name)) {
-      result = await executeConfluenceTool(name, args, env);
+      result = await executeConfluenceTool(name, args, env, userId);
     } else if (capacityToolNames.has(name)) {
       result = await executeCapacityTool(name, args, env);
     } else if (plannerToolNames.has(name)) {

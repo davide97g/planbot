@@ -5,6 +5,7 @@ import {
 } from "@planbot/shared/tool-schemas";
 import type { Env, ToolDefinition } from "../types";
 import { searchIssues, issuesByFixVersion, issuesByActiveSprint } from "../jira";
+import { getAtlassianAccessToken } from "../api/atlassian-oauth";
 
 export const tools: ToolDefinition[] = [
   createToolDefinition(
@@ -33,18 +34,25 @@ export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   env: Env,
+  userId?: string,
 ): Promise<unknown> {
+  // Resolve OAuth token (throws if not connected)
+  if (!userId) {
+    throw new Error("Atlassian account not connected. Please visit /api/auth/atlassian/connect");
+  }
+  const auth = await getAtlassianAccessToken(userId, env);
+
   switch (name) {
     case "search_jira_issues":
-      return searchIssues(args.jql as string, env);
+      return searchIssues(args.jql as string, env, auth);
     case "get_issue": {
-      const issues = await searchIssues(`key = "${args.key as string}"`, env);
+      const issues = await searchIssues(`key = "${args.key as string}"`, env, auth);
       return issues[0] ?? null;
     }
     case "search_by_version":
-      return issuesByFixVersion(args.version as string, env);
+      return issuesByFixVersion(args.version as string, env, auth);
     case "get_active_sprint":
-      return issuesByActiveSprint(env);
+      return issuesByActiveSprint(env, auth);
     default:
       throw new Error(`Unknown jira tool: ${name}`);
   }
