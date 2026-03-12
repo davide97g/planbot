@@ -127,11 +127,11 @@ export async function handleAtlassianCallback(
 
   await env.PLANBOT_CONFIG.put(kvKey(userId), JSON.stringify(stored));
 
-  // Redirect back to app
-  return new Response(
-    `<html><head><meta http-equiv="refresh" content="0;url=/"></head><body>Atlassian connected! Redirecting...</body></html>`,
-    { status: 200, headers: { "Content-Type": "text/html" } },
-  );
+  // Redirect back to app. In production the worker serves the frontend at the
+  // same origin, so "/" works. In local dev the frontend is on a different port,
+  // so ATLASSIAN_REDIRECT_URI is used to derive the app origin.
+  const appOrigin = new URL(env.ATLASSIAN_REDIRECT_URI).origin.replace(":8787", ":5173");
+  return Response.redirect(appOrigin + "/", 302);
 }
 
 /**
