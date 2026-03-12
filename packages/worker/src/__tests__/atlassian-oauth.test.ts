@@ -15,7 +15,7 @@ const mockEnv = {
 } as any;
 
 beforeEach(() => {
-  vi.restoreAllMocks();
+  vi.clearAllMocks();
   mockKV.put.mockResolvedValue(undefined);
   mockKV.delete.mockResolvedValue(undefined);
 });
