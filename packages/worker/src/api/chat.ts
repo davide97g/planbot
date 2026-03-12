@@ -172,6 +172,7 @@ export async function handleChat(
           ];
           const context: AgentContext = {
             env,
+            userId,
             conversationId: conversation.id,
             messages: llmMessages,
             abortSignal: abortController.signal,

@@ -95,7 +95,7 @@ export async function* runAgent(
 
     // Execute each tool call
     for (const toolCall of toolCalls) {
-      const result = await executeToolCall(toolCall, context.env);
+      const result = await executeToolCall(toolCall, context.env, context.userId);
 
       yield {
         type: "tool_call_result",
