@@ -13,8 +13,8 @@ max_retries = 2
 
 [[kv_namespaces]]
 binding = "PLANBOT_CONFIG"
-id = "PLACEHOLDER_KV_ID"
+id = "8d99f2ecde26429eb756a4ba278d1eec"
 
 [[kv_namespaces]]
 binding = "PLANBOT_CHAT"
-id = "PLACEHOLDER_CHAT_KV_ID"
+id = "3e5fefb521174a1c950f9f005b966a45"
