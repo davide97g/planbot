@@ -9,6 +9,12 @@ import {
 } from "../chat/conversation";
 import { searchIssues } from "../jira";
 import { searchPages, getPageById, extractPageIdFromUrl } from "../confluence";
+import {
+  handleAtlassianConnect,
+  handleAtlassianCallback,
+  hasAtlassianToken,
+  getAtlassianAccessToken,
+} from "./atlassian-oauth";
 
 // ---------------------------------------------------------------------------
 // CORS
@@ -225,12 +231,21 @@ function slackHelpResponse(): Response {
 async function handleSearch(
   request: Request,
   env: Env,
+  userId: string,
 ): Promise<Response> {
   const url = new URL(request.url);
   const type = url.searchParams.get("type");
   const query = url.searchParams.get("q") ?? "";
 
   if (!query) {
+    return corsJson({ results: [] });
+  }
+
+  let auth: { accessToken: string; cloudId: string } | null = null;
+  try {
+    auth = await getAtlassianAccessToken(userId, env);
+  } catch {
+    // User hasn't connected Atlassian — return empty results
     return corsJson({ results: [] });
   }
 
@@ -254,7 +269,7 @@ async function handleSearch(
         jql = `summary ~ "${escaped}" ORDER BY updated DESC`;
       }
 
-      const issues = await searchIssues(jql, env);
+      const issues = await searchIssues(jql, env, auth);
       const results = issues.slice(0, 10).map((issue) => ({
         type: "jira" as const,
         id: issue.key,
@@ -276,7 +291,7 @@ async function handleSearch(
 
       if (pageId) {
         // Fetch specific page by ID
-        const page = await getPageById(pageId, env);
+        const page = await getPageById(pageId, env, auth);
         if (page) {
           return corsJson({
             results: [
@@ -284,7 +299,9 @@ async function handleSearch(
                 type: "confluence" as const,
                 id: page.id,
                 display: page.title,
-                summary: page.bodyText.slice(0, 120) + (page.bodyText.length > 120 ? "..." : ""),
+                summary:
+                  page.bodyText.slice(0, 120) +
+                  (page.bodyText.length > 120 ? "..." : ""),
                 url: query,
               },
             ],
@@ -294,12 +311,18 @@ async function handleSearch(
       }
 
       // Text search
-      const pages = await searchPages(`title ~ "${query}" OR text ~ "${query}"`, env);
+      const pages = await searchPages(
+        `title ~ "${query}" OR text ~ "${query}"`,
+        env,
+        auth,
+      );
       const results = pages.slice(0, 10).map((page) => ({
         type: "confluence" as const,
         id: page.id,
         display: page.title,
-        summary: page.bodyText.slice(0, 120) + (page.bodyText.length > 120 ? "..." : ""),
+        summary:
+          page.bodyText.slice(0, 120) +
+          (page.bodyText.length > 120 ? "..." : ""),
         url: `${env.CONFLUENCE_BASE_URL}/wiki/pages/viewpage.action?pageId=${page.id}`,
       }));
       return corsJson({ results });
@@ -338,6 +361,11 @@ export async function routeRequest(
     return corsResponse(await handleLogin(request, env));
   }
 
+  // OAuth callback — public (called by Atlassian redirect, no JWT required)
+  if (path === "/api/auth/atlassian/callback" && method === "GET") {
+    return corsResponse(await handleAtlassianCallback(request, env));
+  }
+
   // ---------------------------------------------------------------------------
   // All routes below require authentication
   // ---------------------------------------------------------------------------
@@ -349,6 +377,17 @@ export async function routeRequest(
     }
 
     const { userId } = auth;
+
+    // GET /api/auth/atlassian/connect — redirect to Atlassian OAuth
+    if (path === "/api/auth/atlassian/connect" && method === "GET") {
+      return corsResponse(await handleAtlassianConnect(request, env, userId));
+    }
+
+    // GET /api/auth/atlassian/status — check if Atlassian is connected
+    if (path === "/api/auth/atlassian/status" && method === "GET") {
+      const connected = await hasAtlassianToken(userId, env);
+      return corsJson({ connected });
+    }
 
     // POST /api/chat — SSE streaming chat
     if (path === "/api/chat" && method === "POST") {
@@ -393,9 +432,17 @@ export async function routeRequest(
         }
         const title = body.title;
         if (typeof title !== "string" || !title.trim() || title.length > 200) {
-          return corsJson({ error: "title must be a non-empty string ≤200 chars" }, 400);
+          return corsJson(
+            { error: "title must be a non-empty string ≤200 chars" },
+            400,
+          );
         }
-        const updated = await updateConversationTitle(conversationId, userId, title.trim(), env);
+        const updated = await updateConversationTitle(
+          conversationId,
+          userId,
+          title.trim(),
+          env,
+        );
         if (!updated) {
           return corsJson({ error: "Not found" }, 404);
         }
@@ -405,7 +452,7 @@ export async function routeRequest(
 
     // GET /api/search — autocomplete for mentions
     if (path === "/api/search" && method === "GET") {
-      return handleSearch(request, env);
+      return handleSearch(request, env, userId);
     }
 
     return corsJson({ error: "Not Found" }, 404);
