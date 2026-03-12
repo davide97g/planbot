@@ -15,7 +15,11 @@ export async function handleAtlassianConnect(
   env: Env,
   userId: string,
 ): Promise<Response> {
-  const state = btoa(JSON.stringify({ userId, nonce: crypto.randomUUID() }));
+  const nonce = crypto.randomUUID();
+  const state = btoa(JSON.stringify({ userId, nonce }));
+
+  // Store nonce in KV for CSRF verification at callback time (10-minute TTL)
+  await env.PLANBOT_CONFIG.put(`atlassian_nonce:${nonce}`, userId, { expirationTtl: 600 });
 
   const authUrl = new URL("https://auth.atlassian.com/authorize");
   authUrl.searchParams.set("audience", "api.atlassian.com");
@@ -50,15 +54,26 @@ export async function handleAtlassianCallback(
     return new Response("Missing code or state parameter", { status: 400 });
   }
 
-  // Decode state to get userId
+  // Decode state to get userId and nonce
   let userId: string;
+  let nonce: string;
   try {
     const decoded = JSON.parse(atob(state));
     userId = decoded.userId;
+    nonce = decoded.nonce;
     if (!userId) throw new Error("missing userId");
   } catch {
     return new Response("Invalid state parameter", { status: 400 });
   }
+
+  // Verify CSRF nonce before doing anything with the code
+  if (!nonce) throw new Error("missing nonce");
+  const storedUserId = await env.PLANBOT_CONFIG.get(`atlassian_nonce:${nonce}`);
+  if (!storedUserId || storedUserId !== userId) {
+    return new Response("Invalid or expired state parameter", { status: 400 });
+  }
+  // Delete nonce (one-time use)
+  await env.PLANBOT_CONFIG.delete(`atlassian_nonce:${nonce}`);
 
   // Exchange code for tokens
   const tokenRes = await fetch("https://auth.atlassian.com/oauth/token", {
@@ -74,8 +89,8 @@ export async function handleAtlassianCallback(
   });
 
   if (!tokenRes.ok) {
-    const errText = await tokenRes.text();
-    return new Response(`Token exchange failed: ${errText}`, { status: 502 });
+    await tokenRes.text(); // consume body (don't forward to client)
+    return new Response("Token exchange failed. Please try connecting again.", { status: 502 });
   }
 
   const tokenData = await tokenRes.json() as {
@@ -98,6 +113,8 @@ export async function handleAtlassianCallback(
     return new Response("No accessible Atlassian resources found", { status: 400 });
   }
 
+  // Use the first accessible resource as the cloud instance.
+  // For teams with multiple Atlassian cloud instances, change this selection logic.
   const cloudId = resources[0].id;
   const expiresAt = Math.floor(Date.now() / 1000) + tokenData.expires_in;
 

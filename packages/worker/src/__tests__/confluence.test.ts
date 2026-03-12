@@ -7,6 +7,11 @@ const mockEnv = {
   JIRA_API_TOKEN: "token123",
 } as any;
 
+const mockAuth = {
+  accessToken: "test-access-token",
+  cloudId: "test-cloud-id",
+};
+
 describe("stripHtml", () => {
   it("removes HTML tags", () => {
     expect(stripHtml("<p>Hello <b>world</b></p>")).toBe("Hello world");
@@ -48,7 +53,7 @@ describe("searchPages", () => {
       }),
     );
 
-    const pages = await searchPages('label = "planning"', mockEnv);
+    const pages = await searchPages('label = "planning"', mockEnv, mockAuth);
     expect(pages).toHaveLength(1);
     expect(pages[0].title).toBe("Test Page");
     expect(pages[0].bodyText).toBe("Content here");
@@ -61,7 +66,7 @@ describe("searchPages", () => {
       vi.fn().mockResolvedValue({ ok: false, status: 500 }),
     );
 
-    const pages = await searchPages("label = test", mockEnv);
+    const pages = await searchPages("label = test", mockEnv, mockAuth);
     expect(pages).toEqual([]);
   });
 
@@ -71,7 +76,7 @@ describe("searchPages", () => {
       vi.fn().mockRejectedValue(new Error("Network error")),
     );
 
-    const pages = await searchPages("label = test", mockEnv);
+    const pages = await searchPages("label = test", mockEnv, mockAuth);
     expect(pages).toEqual([]);
   });
 
@@ -86,7 +91,7 @@ describe("searchPages", () => {
       }),
     );
 
-    const pages = await searchPages("title = test", mockEnv);
+    const pages = await searchPages("title = test", mockEnv, mockAuth);
     expect(pages[0].bodyText).toBe("");
     expect(pages[0].labels).toEqual([]);
   });
