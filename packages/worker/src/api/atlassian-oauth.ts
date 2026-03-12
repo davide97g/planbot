@@ -67,7 +67,7 @@ export async function handleAtlassianCallback(
   }
 
   // Verify CSRF nonce before doing anything with the code
-  if (!nonce) throw new Error("missing nonce");
+  if (!nonce) return new Response("Invalid state parameter", { status: 400 });
   const storedUserId = await env.PLANBOT_CONFIG.get(`atlassian_nonce:${nonce}`);
   if (!storedUserId || storedUserId !== userId) {
     return new Response("Invalid or expired state parameter", { status: 400 });
