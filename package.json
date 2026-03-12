@@ -1,0 +1,19 @@
+{
+  "name": "planbot-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/worker",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=packages/worker",
+    "dev:web": "npm run dev --workspace=packages/web",
+    "build:web": "npm run build --workspace=packages/web",
+    "deploy": "npm run deploy --workspace=packages/worker",
+    "deploy:web": "npm run deploy --workspace=packages/web",
+    "test": "npm run test --workspace=packages/worker",
+    "test:watch": "npm run test:watch --workspace=packages/worker"
+  }
+}

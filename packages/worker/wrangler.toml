@@ -1,0 +1,20 @@
+name = "planbot"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+[[queues.producers]]
+queue = "planbot-jobs"
+binding = "PLANBOT_QUEUE"
+
+[[queues.consumers]]
+queue = "planbot-jobs"
+max_batch_size = 1
+max_retries = 2
+
+[[kv_namespaces]]
+binding = "PLANBOT_CONFIG"
+id = "PLACEHOLDER_KV_ID"
+
+[[kv_namespaces]]
+binding = "PLANBOT_CHAT"
+id = "PLACEHOLDER_CHAT_KV_ID"

@@ -11,7 +11,7 @@ import {
   saveConversation,
 } from "../chat/conversation";
 import { generateConversationTitle } from "../chat/title";
-import { parseMentions, resolveMentions } from "../chat/mentions";
+import { parseMentions, resolveMentions, stripResourceTags } from "../chat/mentions";
 import {
   parseSlashCommand,
   getAgentForCommand,
@@ -76,13 +76,40 @@ export async function handleChat(
     };
   }
 
-  // Parse mentions
+  // Parse mentions (from both @-mentions and [S:BAT-123] tags)
   let mentions = parseMentions(messageText);
   if (mentions.length > 0) {
     mentions = await resolveMentions(mentions, env);
   }
 
-  // Build user message
+  // Strip resource tags for the LLM — replace [S:BAT-3246] with BAT-3246
+  const llmContent = stripResourceTags(messageText);
+
+  // Build context string with resolved mention details
+  let contextContent = llmContent;
+  const resolvedMentions = mentions.filter((m) => m.resolved);
+  if (resolvedMentions.length > 0) {
+    const mentionContext = resolvedMentions
+      .map((m) => {
+        if (m.type === "confluence") {
+          // Confluence pages have full body content — use structured format
+          const lines = [`Confluence page (ID: ${m.id})`];
+          if (m.resolved?.url) lines.push(`URL: ${m.resolved.url}`);
+          if (m.resolved?.summary) lines.push(m.resolved.summary);
+          return lines.join("\n");
+        }
+        // Jira issues — compact format
+        const parts = [`[${m.id}]`];
+        if (m.resolved?.summary) parts.push(m.resolved.summary);
+        if (m.resolved?.status) parts.push(`Status: ${m.resolved.status}`);
+        if (m.resolved?.url) parts.push(m.resolved.url);
+        return parts.join(" — ");
+      })
+      .join("\n\n");
+    contextContent = `${llmContent}\n\n---\nReferenced resources (already fetched — do NOT re-fetch these):\n${mentionContext}`;
+  }
+
+  // Build user message: original text for display, enriched content for LLM
   const userMessage: ChatMessage = {
     id: crypto.randomUUID(),
     role: "user",
@@ -91,6 +118,12 @@ export async function handleChat(
     timestamp: new Date().toISOString(),
   };
   conversation.messages.push(userMessage);
+
+  // Build a separate LLM-facing message with resolved context
+  const llmUserMessage: ChatMessage = {
+    ...userMessage,
+    content: contextContent,
+  };
 
   // Set up abort controller for stream lifecycle
   const abortController = new AbortController();
@@ -132,10 +165,15 @@ export async function handleChat(
         } else {
           // Determine which agent to use
           let agentEvents: AsyncIterable<SSEEvent>;
+          // Use LLM-enriched message (with resolved mentions) for the agent
+          const llmMessages = [
+            ...conversation.messages.slice(0, -1),
+            llmUserMessage,
+          ];
           const context: AgentContext = {
             env,
             conversationId: conversation.id,
-            messages: conversation.messages,
+            messages: llmMessages,
             abortSignal: abortController.signal,
           };
 
