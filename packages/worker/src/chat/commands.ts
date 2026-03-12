@@ -67,7 +67,7 @@ export function getHelpText(): string {
     "`/plan <version>` — Plan all Jira issues for a fix version (e.g. `/plan V1.2`)",
     "`/jira <query>` — Search and analyze Jira issues",
     "`/confluence <search>` — Search Confluence documentation",
-    "`/report <args>` — Generate reports from project data",
+    "`/report <version> #channel` — Send a release recap to Slack (e.g. `/report V1.2 #releases`)",
     "`/help` — Show this help message",
     "",
     "**Mentions:**",

@@ -67,13 +67,13 @@ const orchestratorTools: ToolDefinition[] = [
   {
     name: "delegate_reporting",
     description:
-      "Delegate to the reporting agent for generating Excel reports from project data",
+      "Delegate to the reporting agent for generating release recaps and sending them to Slack",
     parameters: {
       type: "object",
       properties: {
         task: {
           type: "string",
-          description: "What report to generate",
+          description: "What release recap to generate and which Slack channel to send it to",
         },
       },
       required: ["task"],
@@ -88,7 +88,7 @@ You can answer simple questions directly, but for specialized tasks you should d
 - **Planning Agent**: Creating project plans, sprint plans, release plans, capacity analysis
 - **Jira Agent**: Searching issues, analyzing sprints, inspecting versions, JQL queries
 - **Confluence Agent**: Finding and summarizing documentation, specs, meeting notes
-- **Reporting Agent**: Generating Excel reports from project data
+- **Reporting Agent**: Generating release recaps from Jira and sending them to Slack
 
 When delegating, provide clear context about what the user needs. Include any specific details like version names, sprint names, team names, JQL queries, or date ranges.
 
