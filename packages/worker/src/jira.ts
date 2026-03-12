@@ -21,9 +21,9 @@ interface JiraRawIssue {
     summary: string;
     assignee?: { displayName: string } | null;
     customfield_10016?: number | null;
-    status: { name: string };
-    issuetype: { name: string };
-    priority: { name: string };
+    status?: { name: string } | null;
+    issuetype?: { name: string } | null;
+    priority?: { name: string } | null;
     fixVersions?: { name: string }[];
     sprint?: { name: string } | null;
     issuelinks?: JiraIssueLink[];
@@ -55,9 +55,9 @@ export function mapIssue(raw: JiraRawIssue): JiraIssue {
     summary: fields.summary,
     assignee: fields.assignee?.displayName ?? null,
     storyPoints: fields.customfield_10016 ?? null,
-    status: fields.status.name,
-    issueType: fields.issuetype.name,
-    priority: fields.priority.name,
+    status: fields.status?.name ?? "Unknown",
+    issueType: fields.issuetype?.name ?? "Unknown",
+    priority: fields.priority?.name ?? "None",
     fixVersions: (fields.fixVersions ?? []).map((v) => v.name),
     sprint: fields.sprint?.name ?? null,
     dependencies,
