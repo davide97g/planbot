@@ -14,6 +14,7 @@ import {
   handleAtlassianCallback,
   hasAtlassianToken,
   getAtlassianAccessToken,
+  disconnectAtlassian,
 } from "./atlassian-oauth";
 
 // ---------------------------------------------------------------------------
@@ -378,7 +379,7 @@ export async function routeRequest(
 
     const { userId } = auth;
 
-    // GET /api/auth/atlassian/connect — redirect to Atlassian OAuth
+    // GET /api/auth/atlassian/connect — returns { url } JSON for frontend to navigate to
     if (path === "/api/auth/atlassian/connect" && method === "GET") {
       return corsResponse(await handleAtlassianConnect(request, env, userId));
     }
@@ -387,6 +388,12 @@ export async function routeRequest(
     if (path === "/api/auth/atlassian/status" && method === "GET") {
       const connected = await hasAtlassianToken(userId, env);
       return corsJson({ connected });
+    }
+
+    // DELETE /api/auth/atlassian/token — disconnect Atlassian
+    if (path === "/api/auth/atlassian/token" && method === "DELETE") {
+      await disconnectAtlassian(userId, env);
+      return corsJson({ ok: true });
     }
 
     // POST /api/chat — SSE streaming chat
