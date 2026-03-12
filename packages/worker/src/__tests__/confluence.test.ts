@@ -45,19 +45,23 @@ describe("searchPages", () => {
             {
               id: "123",
               title: "Test Page",
+              status: "current",
+              spaceId: "space1",
               body: { storage: { value: "<p>Content here</p>" } },
-              metadata: { labels: { results: [{ name: "planning" }] } },
+              _links: { webui: "/spaces/TEST/pages/123/Test+Page" },
             },
           ],
+          _links: { base: "https://test.atlassian.net/wiki" },
         }),
       }),
     );
 
-    const pages = await searchPages('label = "planning"', mockEnv, mockAuth);
+    const pages = await searchPages('title ~ "planning"', mockEnv, mockAuth);
     expect(pages).toHaveLength(1);
     expect(pages[0].title).toBe("Test Page");
     expect(pages[0].bodyText).toBe("Content here");
-    expect(pages[0].labels).toEqual(["planning"]);
+    expect(pages[0].labels).toEqual([]);
+    expect(pages[0].url).toBe("https://test.atlassian.net/wiki/spaces/TEST/pages/123/Test+Page");
   });
 
   it("returns empty array on HTTP error", async () => {

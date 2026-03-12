@@ -1,6 +1,7 @@
 import type { Env, Mention } from "../types";
 import { searchIssues } from "../jira";
 import { searchPages, getPageById } from "../confluence";
+import { getAtlassianAccessToken } from "../api/atlassian-oauth";
 
 // ---------------------------------------------------------------------------
 // Mention parsing
@@ -108,12 +109,21 @@ export function stripResourceTags(text: string): string {
 export async function resolveMentions(
   mentions: Mention[],
   env: Env,
+  userId: string,
 ): Promise<Mention[]> {
+  let auth: { accessToken: string; cloudId: string };
+  try {
+    auth = await getAtlassianAccessToken(userId, env);
+  } catch {
+    // User hasn't connected Atlassian — return mentions unresolved
+    return mentions;
+  }
+
   const resolved = await Promise.all(
     mentions.map(async (mention) => {
       try {
         if (mention.type === "jira") {
-          const issues = await searchIssues(`key = "${mention.id}"`, env);
+          const issues = await searchIssues(`key = "${mention.id}"`, env, auth);
           if (issues.length > 0) {
             const issue = issues[0];
             return {
@@ -121,7 +131,6 @@ export async function resolveMentions(
               resolved: {
                 summary: issue.summary,
                 status: issue.status,
-                url: `${env.JIRA_BASE_URL}/browse/${mention.id}`,
               },
             };
           }
@@ -131,7 +140,7 @@ export async function resolveMentions(
 
           if (isPageId) {
             // Fetch directly by ID — reliable, avoids CQL mismatches
-            const page = await getPageById(mention.id, env);
+            const page = await getPageById(mention.id, env, auth);
             if (page) {
               // Truncate body for context (first 2000 chars)
               const bodyPreview = page.bodyText.length > 2000
@@ -141,19 +150,17 @@ export async function resolveMentions(
                 ...mention,
                 resolved: {
                   summary: `${page.title}\n\nPage content:\n${bodyPreview}`,
-                  url: `${env.CONFLUENCE_BASE_URL}/wiki/pages/viewpage.action?pageId=${page.id}`,
                 },
               };
             }
           } else {
-            const pages = await searchPages(`title = "${mention.id}"`, env);
+            const pages = await searchPages(`title = "${mention.id}"`, env, auth);
             if (pages.length > 0) {
               const page = pages[0];
               return {
                 ...mention,
                 resolved: {
                   summary: page.title,
-                  url: `${env.CONFLUENCE_BASE_URL}/wiki/pages/viewpage.action?pageId=${page.id}`,
                 },
               };
             }

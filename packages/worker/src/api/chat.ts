@@ -79,7 +79,7 @@ export async function handleChat(
   // Parse mentions (from both @-mentions and [S:BAT-123] tags)
   let mentions = parseMentions(messageText);
   if (mentions.length > 0) {
-    mentions = await resolveMentions(mentions, env);
+    mentions = await resolveMentions(mentions, env, userId);
   }
 
   // Strip resource tags for the LLM — replace [S:BAT-3246] with BAT-3246

@@ -19,6 +19,7 @@ export interface ConfluencePage {
   title: string;
   bodyText: string;
   labels: string[];
+  url?: string;
 }
 
 export interface SlackMessage {

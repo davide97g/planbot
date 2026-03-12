@@ -8,6 +8,7 @@ import { searchIssues } from "../jira";
 import { loadTeamCapacity } from "../capacity";
 import { searchPages } from "../confluence";
 import { generatePlan, type PlannerInput } from "../planner";
+import { getAtlassianAccessToken } from "../api/atlassian-oauth";
 
 export const tools: ToolDefinition[] = [
   createToolDefinition(
@@ -30,9 +31,15 @@ export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   env: Env,
+  userId?: string,
 ): Promise<unknown> {
   switch (name) {
     case "generate_plan": {
+      if (!userId) {
+        throw new Error("Atlassian account not connected. Please visit /api/auth/atlassian/connect");
+      }
+      const auth = await getAtlassianAccessToken(userId, env);
+
       const jql = args.issues_jql as string;
       const teamName = (args.team as string) ?? "default";
       const today = new Date().toISOString().slice(0, 10);
@@ -43,9 +50,9 @@ export async function executeTool(
       const title = (args.title as string) ?? "Delivery Plan";
 
       const [issues, capacity, confluenceContext] = await Promise.all([
-        searchIssues(jql, env),
+        searchIssues(jql, env, auth),
         loadTeamCapacity(teamName, env),
-        searchPages(`label = "planning" AND type = page`, env),
+        searchPages(`label = "planning" AND type = page`, env, auth).catch(() => []),
       ]);
 
       const input: PlannerInput = {

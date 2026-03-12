@@ -49,7 +49,7 @@ export async function executeToolCall(
     } else if (capacityToolNames.has(name)) {
       result = await executeCapacityTool(name, args, env);
     } else if (plannerToolNames.has(name)) {
-      result = await executePlannerTool(name, args, env);
+      result = await executePlannerTool(name, args, env, userId);
     } else if (excelToolNames.has(name)) {
       result = await executeExcelTool(name, args, env);
     } else {

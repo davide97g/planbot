@@ -2,17 +2,14 @@
 SLACK_SIGNING_SECRET=
 SLACK_BOT_TOKEN=
 
-# Jira / Confluence (basic auth)
-JIRA_BASE_URL=https://your-domain.atlassian.net
-JIRA_EMAIL=your-email@company.com
-JIRA_API_TOKEN=
-CONFLUENCE_BASE_URL=https://your-domain.atlassian.net
+# Atlassian OAuth 2.0
+ATLASSIAN_CLIENT_ID=
+ATLASSIAN_CLIENT_SECRET=
+ATLASSIAN_REDIRECT_URI=
 
 # LLM
 OPENAI_API_KEY=
 LLM_PROVIDER=openai
-# Only needed if LLM_PROVIDER=anthropic
-# ANTHROPIC_API_KEY=
 
 # Chat auth
 AUTH_TEAM_PASSWORD=

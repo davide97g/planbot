@@ -16,6 +16,7 @@ import {
   getAtlassianAccessToken,
   disconnectAtlassian,
 } from "./atlassian-oauth";
+import { handleDemoGenerate } from "./demo-data";
 
 // ---------------------------------------------------------------------------
 // CORS
@@ -311,11 +312,12 @@ async function handleSearch(
         return corsJson({ results: [] });
       }
 
-      // Text search
+      // Text search using V2 pages API with title filter
       const pages = await searchPages(
-        `title ~ "${query}" OR text ~ "${query}"`,
+        "",
         env,
         auth,
+        query,
       );
       const results = pages.slice(0, 10).map((page) => ({
         type: "confluence" as const,
@@ -324,7 +326,7 @@ async function handleSearch(
         summary:
           page.bodyText.slice(0, 120) +
           (page.bodyText.length > 120 ? "..." : ""),
-        url: `${env.CONFLUENCE_BASE_URL}/wiki/pages/viewpage.action?pageId=${page.id}`,
+        url: page.url,
       }));
       return corsJson({ results });
     } catch {
@@ -460,6 +462,11 @@ export async function routeRequest(
     // GET /api/search — autocomplete for mentions
     if (path === "/api/search" && method === "GET") {
       return handleSearch(request, env, userId);
+    }
+
+    // POST /api/demo/generate — generate demo Jira issues & Confluence pages
+    if (path === "/api/demo/generate" && method === "POST") {
+      return corsResponse(await handleDemoGenerate(request, env, userId));
     }
 
     return corsJson({ error: "Not Found" }, 404);

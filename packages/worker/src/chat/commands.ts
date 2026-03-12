@@ -64,7 +64,7 @@ export function getHelpText(): string {
   return [
     "**Available commands:**",
     "",
-    "`/plan release|sprint|jql <args>` — Create a project, sprint, or JQL-based plan",
+    "`/plan <version>` — Plan all Jira issues for a fix version (e.g. `/plan V1.2`)",
     "`/jira <query>` — Search and analyze Jira issues",
     "`/confluence <search>` — Search Confluence documentation",
     "`/report <args>` — Generate reports from project data",
