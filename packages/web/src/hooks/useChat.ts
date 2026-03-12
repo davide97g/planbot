@@ -19,6 +19,15 @@ export type ContentBlock =
   | { type: "text"; content: string }
   | { type: "tool_call"; toolCall: ToolCall };
 
+export interface FileAttachmentInfo {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  key: string;
+  previewUrl?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool";
@@ -27,6 +36,7 @@ export interface ChatMessage {
   /** Ordered interleaved blocks of text and tool calls */
   blocks?: ContentBlock[];
   agentName?: string;
+  attachments?: FileAttachmentInfo[];
   timestamp: string;
   tokenUsage?: TokenUsage;
 }
@@ -44,7 +54,7 @@ export interface UseChatReturn {
   error: string | null;
   conversationId: string | null;
   conversationTitle: string | null;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, attachments?: FileAttachmentInfo[]) => Promise<void>;
   loadConversation: (id: string) => Promise<void>;
   newConversation: () => void;
   conversations: Conversation[];
@@ -134,7 +144,7 @@ export function useChat(options?: UseChatOptions): UseChatReturn {
   }, []);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, attachments?: FileAttachmentInfo[]) => {
       if (isStreaming) return;
 
       setError(null);
@@ -143,6 +153,7 @@ export function useChat(options?: UseChatOptions): UseChatReturn {
         id: generateId(),
         role: "user",
         content: text,
+        attachments: attachments,
         timestamp: new Date().toISOString(),
       };
 
@@ -170,6 +181,7 @@ export function useChat(options?: UseChatOptions): UseChatReturn {
             conversationId: conversationId || undefined,
             message: text,
             model: localStorage.getItem("planbot_model") || undefined,
+            attachments: attachments || undefined,
           }),
           signal: abort.signal,
         });

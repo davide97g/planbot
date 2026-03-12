@@ -50,6 +50,7 @@ export function getAgentForCommand(command: string): Agent | null {
     case "confluence":
       return createConfluenceAgent();
     case "report":
+    case "sprint-review":
       return createReportingAgent();
     default:
       return null;
@@ -68,6 +69,7 @@ export function getHelpText(): string {
     "`/jira <query>` — Search and analyze Jira issues",
     "`/confluence <search>` — Search Confluence documentation",
     "`/report <version> #channel` — Send a release recap to Slack (e.g. `/report V1.2 #releases`)",
+    "`/sprint-review [sprint-name]` — Generate a sprint review with velocity, completion rate, and carryover analysis",
     "`/help` — Show this help message",
     "",
     "**Mentions:**",

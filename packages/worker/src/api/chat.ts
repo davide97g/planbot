@@ -17,6 +17,7 @@ import {
   getAgentForCommand,
   getHelpText,
 } from "../chat/commands";
+import { loadMemory } from "../tools/memory";
 
 // ---------------------------------------------------------------------------
 // SSE helpers
@@ -39,7 +40,11 @@ export async function handleChat(
   env: Env,
   userId: string,
 ): Promise<Response> {
-  let body: { conversationId?: string; message?: string };
+  let body: {
+    conversationId?: string;
+    message?: string;
+    attachments?: { id: string; name: string; mimeType: string; size: number; key: string }[];
+  };
   try {
     body = await request.json();
   } catch {
@@ -49,6 +54,55 @@ export async function handleChat(
   const messageText = body.message?.trim();
   if (!messageText) {
     return Response.json({ error: "Message is required" }, { status: 400 });
+  }
+
+  // Resolve file attachments from R2 into text context and image parts
+  let attachmentContext = "";
+  const fileAttachments: import("../types").FileAttachment[] = [];
+  const imageParts: import("../types").LLMContentPart[] = [];
+  if (body.attachments && body.attachments.length > 0) {
+    for (const att of body.attachments) {
+      fileAttachments.push({
+        id: att.id,
+        name: att.name,
+        mimeType: att.mimeType,
+        size: att.size,
+      });
+
+      if (att.mimeType.startsWith("image/")) {
+        // Fetch image from R2 and encode as base64 for vision models
+        try {
+          const obj = await env.PLANBOT_FILES.get(att.key);
+          if (obj) {
+            const arrayBuffer = await obj.arrayBuffer();
+            const uint8 = new Uint8Array(arrayBuffer);
+            let binary = "";
+            for (let i = 0; i < uint8.length; i++) binary += String.fromCharCode(uint8[i]);
+            const base64 = btoa(binary);
+            imageParts.push({ type: "image", mimeType: att.mimeType, data: base64 });
+          }
+        } catch {
+          attachmentContext += `\n\n[Attached image: ${att.name}]`;
+        }
+      } else if (
+        att.mimeType.startsWith("text/") ||
+        att.mimeType === "application/csv"
+      ) {
+        try {
+          const obj = await env.PLANBOT_FILES.get(att.key);
+          if (obj) {
+            const text = await obj.text();
+            const truncated =
+              text.length > 5000 ? text.slice(0, 5000) + "\n...(truncated)" : text;
+            attachmentContext += `\n\n---\nAttached file "${att.name}":\n\`\`\`\n${truncated}\n\`\`\``;
+          }
+        } catch {
+          // ignore extraction failures
+        }
+      } else if (att.mimeType === "application/pdf") {
+        attachmentContext += `\n\n[Attached PDF: ${att.name}]`;
+      }
+    }
   }
 
   // Load or create conversation
@@ -98,6 +152,15 @@ export async function handleChat(
           if (m.resolved?.summary) lines.push(m.resolved.summary);
           return lines.join("\n");
         }
+        if (m.type === "memory") {
+          return `Memory context:\n${m.resolved?.summary ?? ""}`;
+        }
+        if (m.type === "slack") {
+          return `Referenced Slack channel: ${m.display}`;
+        }
+        if (m.type === "sprint") {
+          return `Referenced sprint: ${m.display}`;
+        }
         // Jira issues — compact format
         const parts = [`[${m.id}]`];
         if (m.resolved?.summary) parts.push(m.resolved.summary);
@@ -109,12 +172,18 @@ export async function handleChat(
     contextContent = `${llmContent}\n\n---\nReferenced resources (already fetched — do NOT re-fetch these):\n${mentionContext}`;
   }
 
+  // Append file attachment context
+  if (attachmentContext) {
+    contextContent += attachmentContext;
+  }
+
   // Build user message: original text for display, enriched content for LLM
   const userMessage: ChatMessage = {
     id: crypto.randomUUID(),
     role: "user",
     content: messageText,
     mentions: mentions.length > 0 ? mentions : undefined,
+    attachments: fileAttachments.length > 0 ? fileAttachments : undefined,
     timestamp: new Date().toISOString(),
   };
   conversation.messages.push(userMessage);
@@ -123,6 +192,10 @@ export async function handleChat(
   const llmUserMessage: ChatMessage = {
     ...userMessage,
     content: contextContent,
+    // If there are images, build multipart content: text first, then image blocks
+    contentParts: imageParts.length > 0
+      ? [{ type: "text", text: contextContent }, ...imageParts]
+      : undefined,
   };
 
   // Set up abort controller for stream lifecycle
@@ -146,6 +219,9 @@ export async function handleChat(
             agentName: "__meta",
           },
         } as SSEEvent);
+
+        // Load user memory for context
+        const userMemory = await loadMemory(userId, env);
 
         // Check for slash commands
         const slashCmd = parseSlashCommand(messageText);
@@ -176,6 +252,7 @@ export async function handleChat(
             conversationId: conversation.id,
             messages: llmMessages,
             abortSignal: abortController.signal,
+            memory: userMemory,
           };
 
           if (slashCmd) {

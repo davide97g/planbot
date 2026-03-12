@@ -11,7 +11,7 @@ export async function apiFetch(
     ...(options?.headers as Record<string, string>),
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (!headers["Content-Type"] && options?.method !== "GET") {
+  if (!headers["Content-Type"] && options?.method !== "GET" && !(options?.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
   return fetch(`${API_BASE}${path}`, { ...options, headers });

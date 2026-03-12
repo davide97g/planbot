@@ -23,10 +23,10 @@ import {
   PencilIcon,
   MessageSquareIcon,
   PanelLeftCloseIcon,
-  PanelLeftIcon,
   LogOutIcon,
   Loader2Icon,
   SettingsIcon,
+  HistoryIcon,
 } from "lucide-react";
 import { clearToken } from "@/lib/auth";
 import { PlanBotLogo } from "./PlanBotLogo";
@@ -185,16 +185,6 @@ export function ConversationSidebar({
         <div className="flex h-full w-12 flex-col items-center border-r border-border bg-card py-3 gap-2">
           <Tooltip>
             <TooltipTrigger
-              onClick={onToggleCollapse}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
-            >
-              <PanelLeftIcon className="size-4" />
-            </TooltipTrigger>
-            <TooltipContent side="right">Expand sidebar</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger
               onClick={onNew}
               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
             >
@@ -205,25 +195,15 @@ export function ConversationSidebar({
 
           <Separator className="my-1 w-6" />
 
-          <ScrollArea className="flex-1 w-full">
-            <div className="flex flex-col items-center gap-1 px-1">
-              {conversations.map((conv) => (
-                <Tooltip key={conv.id}>
-                  <TooltipTrigger
-                    onClick={() => onSelect(conv.id)}
-                    className={`flex h-8 w-8 items-center justify-center rounded-md text-xs font-medium transition-colors ${
-                      activeId === conv.id
-                        ? "bg-accent text-accent-foreground"
-                        : "text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    <MessageSquareIcon className="size-4" />
-                  </TooltipTrigger>
-                  <TooltipContent side="right">{conv.title || "Untitled"}</TooltipContent>
-                </Tooltip>
-              ))}
-            </div>
-          </ScrollArea>
+          <Tooltip>
+            <TooltipTrigger
+              onClick={onToggleCollapse}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+            >
+              <HistoryIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipContent side="right">Chat history</TooltipContent>
+          </Tooltip>
 
           <div className="flex flex-col items-center gap-1 mt-auto">
             <Separator className="mb-1 w-6" />
@@ -256,7 +236,7 @@ export function ConversationSidebar({
 
   // Expanded view
   return (
-    <div className="flex h-full w-70 flex-col border-r border-border bg-card">
+    <div className="flex h-full w-70 flex-col border-r border-border bg-card overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between p-3">
         <div className="flex items-center gap-2">
@@ -283,7 +263,7 @@ export function ConversationSidebar({
       <Separator />
 
       {/* Conversation list */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="flex flex-col gap-0.5 p-2">
           {conversations.length === 0 && (
             <p className="px-2 py-4 text-center text-xs text-muted-foreground">

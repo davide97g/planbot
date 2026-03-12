@@ -14,6 +14,8 @@ import { createConfluenceAgent } from "./confluence-agent";
 import { createReportingAgent } from "./reporting";
 import { runAgent } from "./runner";
 import { tools as taskTools, executeTool as executeTaskTool } from "../tools/tasks";
+import { tools as memoryTools, executeTool as executeMemoryTool } from "../tools/memory";
+import type { UserMemory } from "../types";
 
 // ---------------------------------------------------------------------------
 // Delegation tools (orchestrator-only, not in the shared tool system)
@@ -103,7 +105,10 @@ For general questions about your capabilities, greetings, or simple follow-ups, 
 - NEVER output URL-encoded strings or raw JQL queries to the user
 - Reference Jira issues by their key only (e.g. BAT-3314), not as links
 - Reference Confluence pages by their title, not as URLs
-- Use markdown headings, tables, and bullet points for structured data`;
+- Use markdown headings, tables, and bullet points for structured data
+
+## Memory
+You have long-term memory tools. Use **remember_fact** to save important context the user shares (project names, preferences, team members, decisions). Use **recall_memory** to retrieve saved context when you need it. Proactively remember things that would be useful in future conversations.`;
 
 // ---------------------------------------------------------------------------
 // Agent factory map
@@ -125,13 +130,22 @@ export function createOrchestrator(): Agent {
     name: "orchestrator",
     description: "Routes user requests to specialist agents",
     systemPrompt: SYSTEM_PROMPT,
-    tools: [...orchestratorTools, ...taskTools],
+    tools: [...orchestratorTools, ...taskTools, ...memoryTools],
 
     async *run(context: AgentContext): AsyncIterable<SSEEvent> {
       const provider = createLLMProvider(context.env);
 
+      // Build system prompt with memory context if available
+      let systemPrompt = SYSTEM_PROMPT;
+      if (context.memory) {
+        const memoryBlock = formatMemoryForPrompt(context.memory);
+        if (memoryBlock) {
+          systemPrompt += `\n\n## User Memory\n${memoryBlock}`;
+        }
+      }
+
       const llmMessages: LLMMessage[] = [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         ...context.messages.map(chatMessageToLLM),
       ];
 
@@ -150,9 +164,10 @@ export function createOrchestrator(): Agent {
         let toolCalls: ToolCall[] = [];
 
         try {
+          const allOrchestratorTools = [...orchestratorTools, ...memoryTools];
           for await (const event of provider.chat(
             llmMessages,
-            orchestratorTools,
+            allOrchestratorTools,
           )) {
             switch (event.type) {
               case "token":
@@ -192,6 +207,37 @@ export function createOrchestrator(): Agent {
 
         // Process tool calls (delegation + create_task)
         for (const toolCall of toolCalls) {
+          // Handle memory tools directly
+          if (toolCall.name === "remember_fact" || toolCall.name === "recall_memory") {
+            const args = toolCall.arguments as Record<string, unknown>;
+            const result = await executeMemoryTool(toolCall.name, args, context.env, context.userId);
+
+            yield {
+              type: "tool_call_start",
+              data: { toolCall, agentName: "orchestrator" },
+            };
+            yield {
+              type: "tool_call_result",
+              data: {
+                result: { toolCallId: toolCall.id, name: toolCall.name, result },
+                agentName: "orchestrator",
+              },
+            };
+
+            llmMessages.push({
+              role: "assistant",
+              content: fullContent,
+              toolCalls: [toolCall],
+            });
+            llmMessages.push({
+              role: "tool",
+              content: JSON.stringify(result),
+              toolCallId: toolCall.id,
+            });
+            fullContent = "";
+            continue;
+          }
+
           // Handle create_task directly
           if (toolCall.name === "create_task") {
             const args = toolCall.arguments as Record<string, unknown>;
@@ -321,6 +367,73 @@ export function createOrchestrator(): Agent {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function formatMemoryForPrompt(memory: UserMemory): string {
+  // Use the flat entries array if available (new format)
+  if (memory.entries && memory.entries.length > 0) {
+    const always = memory.entries.filter((e) => e.alwaysInclude);
+    if (always.length === 0) return "";
+
+    const byCategory: Record<string, string[]> = {};
+    for (const entry of always) {
+      (byCategory[entry.category] ??= []).push(`- [${entry.id.slice(0, 8)}] ${entry.content}`);
+    }
+
+    const LABELS: Record<string, string> = {
+      fact: "Known facts",
+      preference: "Preferences",
+      project: "Projects",
+      team: "Team",
+      plan_outcome: "Recent plan outcomes",
+    };
+
+    return Object.entries(byCategory)
+      .map(([cat, lines]) => `**${LABELS[cat] ?? cat}:**\n${lines.join("\n")}`)
+      .join("\n\n");
+  }
+
+  // Fallback to legacy structure
+  const parts: string[] = [];
+
+  if (memory.projects.length > 0) {
+    const projects = memory.projects
+      .map((p) => `- **${p.key}**: ${p.name}${p.board ? ` (board: ${p.board})` : ""}`)
+      .join("\n");
+    parts.push(`**Projects:**\n${projects}`);
+  }
+
+  if (Object.keys(memory.preferences).length > 0) {
+    const prefs = Object.entries(memory.preferences)
+      .map(([k, v]) => `- ${k}: ${v}`)
+      .join("\n");
+    parts.push(`**Preferences:**\n${prefs}`);
+  }
+
+  if (memory.facts.length > 0) {
+    const facts = memory.facts.map((f) => `- ${f.text}`).join("\n");
+    parts.push(`**Known facts:**\n${facts}`);
+  }
+
+  if (memory.teamContext.members.length > 0) {
+    const members = memory.teamContext.members
+      .map((m) => {
+        const role = memory.teamContext.roles[m];
+        return role ? `- ${m} (${role})` : `- ${m}`;
+      })
+      .join("\n");
+    parts.push(`**Team:**\n${members}`);
+  }
+
+  if (memory.planOutcomes.length > 0) {
+    const outcomes = memory.planOutcomes
+      .slice(-5)
+      .map((o) => `- ${o.title} (${o.date})${o.notes ? `: ${o.notes}` : ""}`)
+      .join("\n");
+    parts.push(`**Recent plan outcomes:**\n${outcomes}`);
+  }
+
+  return parts.join("\n\n");
+}
+
 function chatMessageToLLM(msg: ChatMessage): LLMMessage {
   if (msg.role === "tool" && msg.toolResults?.length) {
     const tr = msg.toolResults[0];
@@ -333,7 +446,7 @@ function chatMessageToLLM(msg: ChatMessage): LLMMessage {
 
   return {
     role: msg.role === "tool" ? "user" : msg.role,
-    content: msg.content,
+    content: msg.contentParts ?? msg.content,
     toolCalls: msg.toolCalls,
   };
 }

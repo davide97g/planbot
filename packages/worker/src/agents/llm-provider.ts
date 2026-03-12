@@ -90,14 +90,14 @@ function createOpenAIProvider(apiKey: string): LLMProvider {
         if (m.role === "tool") {
           return {
             role: "tool" as const,
-            content: m.content,
+            content: m.content as string,
             tool_call_id: m.toolCallId ?? "",
           };
         }
         if (m.role === "assistant" && m.toolCalls?.length) {
           return {
             role: "assistant" as const,
-            content: m.content || null,
+            content: (m.content as string) || null,
             tool_calls: m.toolCalls.map((tc) => ({
               id: tc.id,
               type: "function" as const,
@@ -106,6 +106,18 @@ function createOpenAIProvider(apiKey: string): LLMProvider {
                 arguments: JSON.stringify(tc.arguments),
               },
             })),
+          };
+        }
+        if (Array.isArray(m.content)) {
+          return {
+            role: m.role,
+            content: m.content.map((part) => {
+              if (part.type === "text") return { type: "text" as const, text: part.text };
+              return {
+                type: "image_url" as const,
+                image_url: { url: `data:${part.mimeType};base64,${part.data}` },
+              };
+            }),
           };
         }
         return { role: m.role, content: m.content };
@@ -258,7 +270,7 @@ function createAnthropicProvider(apiKey: string): LLMProvider {
       const conversationMessages: LLMMessage[] = [];
       for (const m of messages) {
         if (m.role === "system") {
-          systemText += (systemText ? "\n\n" : "") + m.content;
+          systemText += (systemText ? "\n\n" : "") + (m.content as string);
         } else {
           conversationMessages.push(m);
         }
@@ -402,6 +414,7 @@ interface AnthropicContentBlock {
   input?: Record<string, unknown>;
   tool_use_id?: string;
   content?: string;
+  source?: { type: string; media_type: string; data: string };
 }
 
 interface AnthropicMessage {
@@ -416,12 +429,23 @@ function convertToAnthropicMessages(
 
   for (const m of messages) {
     if (m.role === "user") {
-      result.push({ role: "user", content: m.content });
+      if (Array.isArray(m.content)) {
+        const blocks: AnthropicContentBlock[] = m.content.map((part) => {
+          if (part.type === "text") return { type: "text", text: part.text };
+          return {
+            type: "image",
+            source: { type: "base64", media_type: part.mimeType, data: part.data },
+          };
+        });
+        result.push({ role: "user", content: blocks });
+      } else {
+        result.push({ role: "user", content: m.content });
+      }
     } else if (m.role === "assistant") {
       if (m.toolCalls?.length) {
         const content: AnthropicContentBlock[] = [];
         if (m.content) {
-          content.push({ type: "text", text: m.content });
+          content.push({ type: "text", text: m.content as string });
         }
         for (const tc of m.toolCalls) {
           content.push({
@@ -433,14 +457,14 @@ function convertToAnthropicMessages(
         }
         result.push({ role: "assistant", content });
       } else {
-        result.push({ role: "assistant", content: m.content });
+        result.push({ role: "assistant", content: m.content as string });
       }
     } else if (m.role === "tool") {
       // Anthropic expects tool results in a user message
       const toolResultBlock: AnthropicContentBlock = {
         type: "tool_result",
         tool_use_id: m.toolCallId ?? "",
-        content: m.content,
+        content: m.content as string,
       };
       // Check if last message is already a user message with tool_result blocks
       const last = result[result.length - 1];

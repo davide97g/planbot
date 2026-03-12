@@ -14,8 +14,13 @@ const COMMANDS = [
   },
   {
     name: "/report",
-    description: "Generate an Excel report",
-    args: "<description>",
+    description: "Generate a release recap",
+    args: "<version> #channel",
+  },
+  {
+    name: "/sprint-review",
+    description: "Sprint review with velocity & carryover",
+    args: "[sprint-name]",
   },
   { name: "/help", description: "Show available commands" },
 ] as const;

@@ -2,6 +2,7 @@ import type { Env, Mention } from "../types";
 import { searchIssues } from "../jira";
 import { searchPages, getPageById } from "../confluence";
 import { getAtlassianAccessToken } from "../api/atlassian-oauth";
+import { loadMemory } from "../tools/memory";
 
 // ---------------------------------------------------------------------------
 // Mention parsing
@@ -53,6 +54,53 @@ export function parseMentions(text: string): Mention[] {
     }
   }
 
+  // Slack channel chips: [#:channelId:channelName]
+  const slackTagRegex = /\[#:([^:]+):([^\]]+)\]/g;
+  while ((match = slackTagRegex.exec(text)) !== null) {
+    const channelId = match[1];
+    const channelName = match[2];
+    const id = `slack:${channelId}`;
+    if (!seen.has(id)) {
+      seen.add(id);
+      mentions.push({
+        type: "slack",
+        id: channelId,
+        display: `#${channelName}`,
+      });
+    }
+  }
+
+  // Memory chips: [M:memoryId:title]
+  const memoryChipRegex = /\[M:([^:]+):([^\]]+)\]/g;
+  while ((match = memoryChipRegex.exec(text)) !== null) {
+    const entryId = match[1];
+    const id = `memory:${entryId}`;
+    if (!seen.has(id)) {
+      seen.add(id);
+      mentions.push({
+        type: "memory",
+        id: entryId,
+        display: match[2],
+      });
+    }
+  }
+
+  // Sprint chips: [SP:sprintId:sprintName]
+  const sprintTagRegex = /\[SP:([^:]+):([^\]]+)\]/g;
+  while ((match = sprintTagRegex.exec(text)) !== null) {
+    const sprintId = match[1];
+    const sprintName = match[2];
+    const id = `sprint:${sprintId}`;
+    if (!seen.has(id)) {
+      seen.add(id);
+      mentions.push({
+        type: "sprint",
+        id: sprintId,
+        display: sprintName,
+      });
+    }
+  }
+
   // Jira mentions: @PROJ-123 (uppercase project key, dash, digits)
   const jiraRegex = /@([A-Z][A-Z0-9]+-\d+)/g;
   while ((match = jiraRegex.exec(text)) !== null) {
@@ -83,6 +131,21 @@ export function parseMentions(text: string): Mention[] {
     }
   }
 
+  // Memory mentions: @memory:entry-id (short or full UUID)
+  const memoryRegex = /@memory:([a-zA-Z0-9_-]+)/g;
+  while ((match = memoryRegex.exec(text)) !== null) {
+    const entryId = match[1];
+    const id = `memory:${entryId}`;
+    if (!seen.has(id)) {
+      seen.add(id);
+      mentions.push({
+        type: "memory",
+        id: entryId,
+        display: `@memory:${entryId}`,
+      });
+    }
+  }
+
   return mentions;
 }
 
@@ -95,7 +158,14 @@ export function stripResourceTags(text: string): string {
   let result = text.replace(/\[([A-Z]{1,2}):([A-Z][A-Z0-9]+-\d+)\]/g, "$2");
   // Strip Confluence tags: [C:12345:Page Title] → Page Title
   result = result.replace(/\[C:(\d+):([^\]]+)\]/g, "$2");
-  return result;
+  // Strip memory tags (both formats): @memory:id and [M:id:title]
+  result = result.replace(/@memory:[a-zA-Z0-9_-]+/g, "");
+  result = result.replace(/\[M:[^:]+:[^\]]+\]/g, "");
+  // Strip Slack channel tags: [#:channelId:name] → #name
+  result = result.replace(/\[#:[^:]+:([^\]]+)\]/g, "#$1");
+  // Strip Sprint tags: [SP:id:name] → Sprint: name
+  result = result.replace(/\[SP:[^:]+:([^\]]+)\]/g, "Sprint: $1");
+  return result.trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -119,8 +189,47 @@ export async function resolveMentions(
     return mentions;
   }
 
+  // Resolve memory mentions separately (no Atlassian auth needed)
+  const memoryMentions = mentions.filter((m) => m.type === "memory");
+  let resolvedMemory: Map<string, string> = new Map();
+  if (memoryMentions.length > 0) {
+    try {
+      const memory = await loadMemory(userId, env);
+      for (const m of memoryMentions) {
+        // Match by full ID or by short prefix (first 8 chars)
+        const entry = memory.entries.find(
+          (e) => e.id === m.id || e.id.startsWith(m.id),
+        );
+        if (entry) {
+          resolvedMemory.set(m.id, `**${entry.title}**\n${entry.content}`);
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
   const resolved = await Promise.all(
     mentions.map(async (mention) => {
+      if (mention.type === "memory") {
+        const content = resolvedMemory.get(mention.id);
+        if (content) {
+          return { ...mention, resolved: { summary: content } };
+        }
+        return mention;
+      }
+      // Slack channels — inject channel name as context (no API call needed)
+      if (mention.type === "slack") {
+        return {
+          ...mention,
+          resolved: { summary: `Slack channel ${mention.display}` },
+        };
+      }
+      // Sprints — inject sprint name as context
+      if (mention.type === "sprint") {
+        return {
+          ...mention,
+          resolved: { summary: `Sprint: ${mention.display}` },
+        };
+      }
       try {
         if (mention.type === "jira") {
           const issues = await searchIssues(`key = "${mention.id}"`, env, auth);

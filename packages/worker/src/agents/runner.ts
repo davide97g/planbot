@@ -151,7 +151,7 @@ function chatMessageToLLM(msg: ChatMessage): LLMMessage {
 
   return {
     role: msg.role === "tool" ? "user" : msg.role,
-    content: msg.content,
+    content: msg.contentParts ?? msg.content,
     toolCalls: msg.toolCalls,
   };
 }

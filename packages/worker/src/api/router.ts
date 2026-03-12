@@ -227,6 +227,63 @@ function slackHelpResponse(): Response {
 }
 
 // ---------------------------------------------------------------------------
+// File upload handler
+// ---------------------------------------------------------------------------
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_MIME_PREFIXES = ["image/", "text/", "application/pdf", "application/csv", "text/csv"];
+
+async function handleFileUpload(
+  request: Request,
+  env: Env,
+  userId: string,
+): Promise<Response> {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (!contentType.includes("multipart/form-data")) {
+    return corsJson({ error: "Expected multipart/form-data" }, 400);
+  }
+
+  const formData = await request.formData();
+  const file = formData.get("file");
+
+  if (!file || !(file instanceof File)) {
+    return corsJson({ error: "No file provided" }, 400);
+  }
+
+  if (file.size > MAX_FILE_SIZE) {
+    return corsJson({ error: "File too large (max 10MB)" }, 400);
+  }
+
+  const mimeType = file.type || "application/octet-stream";
+  const isAllowed = ALLOWED_MIME_PREFIXES.some(
+    (prefix) => mimeType.startsWith(prefix),
+  );
+  if (!isAllowed) {
+    return corsJson(
+      { error: `File type ${mimeType} not supported` },
+      400,
+    );
+  }
+
+  const fileId = crypto.randomUUID();
+  const key = `${userId}/${fileId}/${file.name}`;
+
+  await env.PLANBOT_FILES.put(key, file.stream(), {
+    httpMetadata: { contentType: mimeType },
+    customMetadata: { userId, originalName: file.name },
+  });
+
+  return corsJson({
+    id: fileId,
+    name: file.name,
+    mimeType,
+    size: file.size,
+    key,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Search handler (for @-mention autocomplete)
 // ---------------------------------------------------------------------------
 
@@ -403,6 +460,11 @@ export async function routeRequest(
       return corsResponse(await handleChat(request, env, userId));
     }
 
+    // POST /api/upload — file attachment upload to R2
+    if (path === "/api/upload" && method === "POST") {
+      return corsResponse(await handleFileUpload(request, env, userId));
+    }
+
     // GET /api/chat/conversations — list conversations
     if (path === "/api/chat/conversations" && method === "GET") {
       const conversations = await listConversations(userId, env);
@@ -494,6 +556,186 @@ export async function routeRequest(
         return corsJson({ channels });
       } catch {
         return corsJson({ channels: [] });
+      }
+    }
+
+    // GET /api/sprints — list sprints for autocomplete (active first)
+    if (path === "/api/sprints" && method === "GET") {
+      try {
+        const auth = await getAtlassianAccessToken(userId, env);
+        const boardRes = await fetch(
+          `https://api.atlassian.com/ex/jira/${auth.cloudId}/rest/agile/1.0/board?maxResults=10`,
+          { headers: { Authorization: `Bearer ${auth.accessToken}`, Accept: "application/json" } },
+        );
+        if (!boardRes.ok) return corsJson({ sprints: [] });
+        const boardData = (await boardRes.json()) as { values: { id: number; name: string }[] };
+
+        const sprints: { id: number; name: string; state: string; startDate?: string; endDate?: string; boardId: number; boardName: string }[] = [];
+        for (const board of boardData.values.slice(0, 5)) {
+          const sprintRes = await fetch(
+            `https://api.atlassian.com/ex/jira/${auth.cloudId}/rest/agile/1.0/board/${board.id}/sprint?state=active,closed&maxResults=10`,
+            { headers: { Authorization: `Bearer ${auth.accessToken}`, Accept: "application/json" } },
+          );
+          if (!sprintRes.ok) continue;
+          const sprintData = (await sprintRes.json()) as {
+            values: { id: number; name: string; state: string; startDate?: string; endDate?: string }[];
+          };
+          for (const s of sprintData.values) {
+            sprints.push({ id: s.id, name: s.name, state: s.state, startDate: s.startDate, endDate: s.endDate, boardId: board.id, boardName: board.name });
+          }
+        }
+
+        // Sort: active first, then by startDate descending
+        sprints.sort((a, b) => {
+          if (a.state === "active" && b.state !== "active") return -1;
+          if (b.state === "active" && a.state !== "active") return 1;
+          return (b.startDate ?? "").localeCompare(a.startDate ?? "");
+        });
+
+        return corsJson({ sprints });
+      } catch {
+        return corsJson({ sprints: [] });
+      }
+    }
+
+    // GET /api/workspace — Jira board + Confluence base URLs for sidebar links
+    if (path === "/api/workspace" && method === "GET") {
+      try {
+        const auth = await getAtlassianAccessToken(userId, env);
+
+        // Resolve the actual site URL from the accessible resources API
+        let siteUrl = env.JIRA_BASE_URL;
+        try {
+          const resRes = await fetch(
+            "https://api.atlassian.com/oauth/token/accessible-resources",
+            { headers: { Authorization: `Bearer ${auth.accessToken}`, Accept: "application/json" } },
+          );
+          if (resRes.ok) {
+            const resources = (await resRes.json()) as { id: string; url: string }[];
+            const site = resources.find((r) => r.id === auth.cloudId);
+            if (site?.url) siteUrl = site.url;
+          }
+        } catch { /* fall back to env */ }
+
+        // Fetch first board for Jira link
+        const boardRes = await fetch(
+          `https://api.atlassian.com/ex/jira/${auth.cloudId}/rest/agile/1.0/board?maxResults=1`,
+          { headers: { Authorization: `Bearer ${auth.accessToken}`, Accept: "application/json" } },
+        );
+        let jiraBoard: { id: number; name: string; url: string } | null = null;
+        if (boardRes.ok) {
+          const boardData = (await boardRes.json()) as {
+            values: { id: number; name: string; self: string; location?: { projectKey?: string } }[];
+          };
+          const b = boardData.values[0];
+          if (b) {
+            const projectKey = b.location?.projectKey;
+            const boardUrl = projectKey
+              ? `${siteUrl}/jira/software/projects/${projectKey}/boards/${b.id}`
+              : `${siteUrl}/jira/software/board/${b.id}`;
+            jiraBoard = { id: b.id, name: b.name, url: boardUrl };
+          }
+        }
+
+        // Confluence URL — use the same site base
+        const confluenceUrl = `${siteUrl}/wiki`;
+
+        return corsJson({ jiraBoard, confluenceUrl });
+      } catch {
+        return corsJson({ jiraBoard: null, confluenceUrl: null });
+      }
+    }
+
+    // Memory CRUD — /api/memory
+    if (path === "/api/memory") {
+      const { loadMemory, saveMemory } = await import("../tools/memory");
+      if (method === "GET") {
+        const memory = await loadMemory(userId, env);
+        return corsJson({ entries: memory.entries });
+      }
+      if (method === "POST") {
+        let body: unknown;
+        try { body = await request.json(); } catch { return corsJson({ error: "Invalid JSON" }, 400); }
+        const b = body as { title?: string; content?: string; category?: string; alwaysInclude?: boolean };
+        if (!b.title || !b.content) return corsJson({ error: "title and content are required" }, 400);
+        const memory = await loadMemory(userId, env);
+        const entry = {
+          id: crypto.randomUUID(),
+          title: b.title,
+          content: b.content,
+          category: (b.category ?? "fact") as import("../types").MemoryEntry["category"],
+          alwaysInclude: b.alwaysInclude ?? true,
+          createdAt: new Date().toISOString().slice(0, 10),
+          source: "user" as const,
+        };
+        memory.entries.push(entry);
+        await saveMemory(userId, memory, env);
+        return corsJson({ entry });
+      }
+    }
+
+    if (path.startsWith("/api/memory/")) {
+      const entryId = path.slice("/api/memory/".length);
+      const { loadMemory, saveMemory } = await import("../tools/memory");
+      const memory = await loadMemory(userId, env);
+      const idx = memory.entries.findIndex((e) => e.id === entryId);
+      if (method === "PUT") {
+        let body: unknown;
+        try { body = await request.json(); } catch { return corsJson({ error: "Invalid JSON" }, 400); }
+        if (idx === -1) return corsJson({ error: "Not found" }, 404);
+        memory.entries[idx] = { ...memory.entries[idx], ...(body as object) };
+        await saveMemory(userId, memory, env);
+        return corsJson({ entry: memory.entries[idx] });
+      }
+      if (method === "DELETE") {
+        if (idx === -1) return corsJson({ error: "Not found" }, 404);
+        memory.entries.splice(idx, 1);
+        await saveMemory(userId, memory, env);
+        return corsJson({ ok: true });
+      }
+    }
+
+    // POST /api/settings/notifications/test — send a test Slack DM
+    if (path === "/api/settings/notifications/test" && method === "POST") {
+      let bodySlackUserId: string | undefined;
+      try {
+        const body = await request.json() as { slackUserId?: string };
+        bodySlackUserId = body?.slackUserId;
+      } catch { /* no body */ }
+      const raw = await env.PLANBOT_CONFIG.get(`notifications:${userId}`);
+      const prefs = raw ? JSON.parse(raw) as { slackUserId?: string } : null;
+      const slackUserId = bodySlackUserId || prefs?.slackUserId;
+      if (!slackUserId) {
+        return corsJson({ error: "No Slack user ID configured in notification preferences" }, 400);
+      }
+      try {
+        const { sendSlackDM } = await import("../notifications/delivery");
+        await sendSlackDM(slackUserId, "🔔 *Planbot test notification* — your notification settings are working correctly!", env);
+        return corsJson({ ok: true });
+      } catch (err) {
+        return corsJson({ error: err instanceof Error ? err.message : "Failed to send notification" }, 500);
+      }
+    }
+
+    // GET/PUT /api/settings/notifications — notification preferences
+    if (path === "/api/settings/notifications") {
+      if (method === "GET") {
+        const raw = await env.PLANBOT_CONFIG.get(`notifications:${userId}`);
+        const prefs = raw ? JSON.parse(raw) : null;
+        return corsJson({ preferences: prefs });
+      }
+      if (method === "PUT") {
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return corsJson({ error: "Invalid JSON body" }, 400);
+        }
+        await env.PLANBOT_CONFIG.put(
+          `notifications:${userId}`,
+          JSON.stringify(body),
+        );
+        return corsJson({ ok: true });
       }
     }
 

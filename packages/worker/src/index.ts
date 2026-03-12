@@ -1,5 +1,6 @@
 import { handleQueue } from "./consumer";
 import { routeRequest } from "./api/router";
+import { handleScheduled } from "./notifications/scheduler";
 import type { Env, PlanningJob } from "./types";
 
 export default {
@@ -20,5 +21,17 @@ export default {
 
   async queue(batch: MessageBatch<PlanningJob>, env: Env): Promise<void> {
     await handleQueue(batch, env);
+  },
+
+  async scheduled(
+    _controller: ScheduledController,
+    env: Env,
+    _ctx: ExecutionContext,
+  ): Promise<void> {
+    try {
+      await handleScheduled(env);
+    } catch (err) {
+      console.error("Scheduled handler error:", err);
+    }
   },
 } satisfies ExportedHandler<Env>;

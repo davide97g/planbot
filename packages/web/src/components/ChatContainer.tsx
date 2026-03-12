@@ -1,15 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useChat } from "@/hooks/useChat";
 import { useAtlassianStatus } from "@/hooks/useAtlassianStatus";
 import { useTaskStore } from "@/hooks/useTaskStore";
 import { useSlackChannels } from "@/hooks/useSlackChannels";
+import { useWorkspace } from "@/hooks/useWorkspace";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { TaskSidebar } from "./TaskSidebar";
+import type { TaggedResource } from "./ResourceChip";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CoinsIcon, DatabaseIcon } from "lucide-react";
+import { CoinsIcon, DatabaseIcon, NetworkIcon } from "lucide-react";
 import { PlanBotLogo } from "./PlanBotLogo";
 import { DemoDataDialog } from "./DemoDataDialog";
 
@@ -20,17 +23,35 @@ interface ChatContainerProps {
 }
 
 export function ChatContainer({ onLogout }: ChatContainerProps) {
+  const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
     return stored !== null ? stored === "true" : true; // default collapsed
   });
   const [demoDialogOpen, setDemoDialogOpen] = useState(false);
+  const [taggedResources, setTaggedResources] = useState<TaggedResource[]>([]);
   const taskStore = useTaskStore();
+
+  const addTaggedResource = useCallback((resource: TaggedResource) => {
+    setTaggedResources((prev) => {
+      if (prev.some((r) => r.id === resource.id)) return prev;
+      return [...prev, resource];
+    });
+  }, []);
+
+  const removeTaggedResource = useCallback((id: string) => {
+    setTaggedResources((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
+  const clearTaggedResources = useCallback(() => {
+    setTaggedResources([]);
+  }, []);
   const chat = useChat({
     onTaskCreate: (title) => taskStore.addTask(title, "ai"),
   });
   const atlassianStatus = useAtlassianStatus();
   const slackChannels = useSlackChannels();
+  const workspace = useWorkspace();
 
   const toggleSidebar = () => {
     setSidebarCollapsed((prev) => {
@@ -87,6 +108,16 @@ export function ChatContainer({ onLogout }: ChatContainerProps) {
               variant="outline"
               size="sm"
               className="text-xs gap-1.5"
+              onClick={() => navigate("/architecture")}
+              title="View architecture map"
+            >
+              <NetworkIcon className="size-3.5" />
+              Architecture
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5"
               onClick={() => setDemoDialogOpen(true)}
             >
               <DatabaseIcon className="size-3.5" />
@@ -108,6 +139,10 @@ export function ChatContainer({ onLogout }: ChatContainerProps) {
           isStreaming={chat.isStreaming}
           tasks={taskStore.tasks}
           slackChannels={slackChannels}
+          taggedResources={taggedResources}
+          onAddTaggedResource={addTaggedResource}
+          onRemoveTaggedResource={removeTaggedResource}
+          onClearTaggedResources={clearTaggedResources}
         />
       </div>
 
@@ -118,6 +153,9 @@ export function ChatContainer({ onLogout }: ChatContainerProps) {
         onDelete={taskStore.deleteTask}
         onReorder={taskStore.reorderTasks}
         onClearCompleted={taskStore.clearCompleted}
+        workspace={{ jiraBoard: workspace.jiraBoard, confluenceUrl: workspace.confluenceUrl }}
+        onResourceSelect={addTaggedResource}
+        slackChannels={slackChannels.channels}
       />
 
       <DemoDataDialog open={demoDialogOpen} onOpenChange={setDemoDialogOpen} />

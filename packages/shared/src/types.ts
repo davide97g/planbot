@@ -109,6 +109,7 @@ export interface Env {
   PLANBOT_QUEUE: Queue<PlanningJob>;
   PLANBOT_CONFIG: KVNamespace;
   PLANBOT_CHAT: KVNamespace;
+  PLANBOT_FILES: R2Bucket;
   SLACK_SIGNING_SECRET: string;
   SLACK_BOT_TOKEN: string;
   JIRA_BASE_URL: string;
@@ -133,6 +134,82 @@ export interface AtlassianTokenData {
 }
 
 // ---------------------------------------------------------------------------
+// User memory (cross-conversation context)
+// ---------------------------------------------------------------------------
+
+export interface UserMemoryProject {
+  key: string;
+  name: string;
+  board?: string;
+  lastMentioned: string; // ISO date
+}
+
+export interface UserMemoryFact {
+  text: string;
+  source: "user" | "agent";
+  createdAt: string; // ISO date
+}
+
+export interface UserMemoryPlanOutcome {
+  title: string;
+  date: string; // ISO date
+  notes?: string;
+}
+
+/** A single named memory bank entry — the normalized format used in the UI. */
+export interface MemoryEntry {
+  id: string;
+  title: string;
+  content: string;
+  category: "fact" | "preference" | "project" | "team" | "plan_outcome";
+  /** true = always injected into every system prompt; false = only injected when @memory:id is mentioned */
+  alwaysInclude: boolean;
+  createdAt: string; // ISO date
+  source: "user" | "agent";
+}
+
+export interface UserMemory {
+  projects: UserMemoryProject[];
+  preferences: Record<string, unknown>;
+  facts: UserMemoryFact[];
+  planOutcomes: UserMemoryPlanOutcome[];
+  teamContext: {
+    members: string[];
+    roles: Record<string, string>;
+  };
+  /** Normalized flat list used by the Memory page and @memory: mentions */
+  entries: MemoryEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// File attachments
+// ---------------------------------------------------------------------------
+
+export interface FileAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  url?: string; // R2 public URL or signed URL
+}
+
+// ---------------------------------------------------------------------------
+// Notification preferences
+// ---------------------------------------------------------------------------
+
+export interface NotificationPreferences {
+  enabled: boolean;
+  slackUserId: string;
+  dailyDigest: {
+    enabled: boolean;
+    time: string; // HH:MM
+    timezone: string;
+  };
+  sprintAlerts: { enabled: boolean };
+  riskAlerts: { enabled: boolean; threshold: "high" | "medium" | "low" };
+}
+
+// ---------------------------------------------------------------------------
 // Chat types
 // ---------------------------------------------------------------------------
 
@@ -140,15 +217,17 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool";
   content: string;
+  contentParts?: LLMContentPart[]; // multipart content (text + images) for LLM
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   agentName?: string;
   mentions?: Mention[];
+  attachments?: FileAttachment[];
   timestamp: string;
 }
 
 export interface Mention {
-  type: "jira" | "confluence";
+  type: "jira" | "confluence" | "memory" | "slack" | "sprint";
   id: string;
   display: string;
   resolved?: { summary?: string; status?: string; url?: string };
@@ -197,6 +276,7 @@ export interface AgentContext {
   conversationId: string;
   messages: ChatMessage[];
   abortSignal?: AbortSignal;
+  memory?: UserMemory;
 }
 
 export interface Agent {
@@ -238,9 +318,13 @@ export interface LLMProvider {
   ): AsyncIterable<StreamEvent>;
 }
 
+export type LLMContentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; mimeType: string; data: string }; // data is base64
+
 export interface LLMMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | LLMContentPart[];
   toolCallId?: string;
   toolCalls?: ToolCall[];
 }

@@ -1,7 +1,7 @@
 import { ToolCallCard } from "./ToolCallCard";
 import { Markdown } from "./Markdown";
 import { ResourceChip, parseResourceTags } from "./ResourceChip";
-import { CoinsIcon } from "lucide-react";
+import { CoinsIcon, FileIcon } from "lucide-react";
 import type { ChatMessage, ContentBlock } from "@/hooks/useChat";
 
 interface ConfluenceUrlChip {
@@ -48,6 +48,28 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               ))}
               {urlChips.map((chip) => (
                 <ResourceChip key={chip.url} abbrev="C" id={chip.url} title={chip.title} />
+              ))}
+            </div>
+          )}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap gap-1">
+              {message.attachments.map((att: { id: string; name: string; mimeType: string; previewUrl?: string }) => (
+                att.previewUrl ? (
+                  <img
+                    key={att.id}
+                    src={att.previewUrl}
+                    alt={att.name}
+                    className="h-40 max-w-full rounded-lg object-cover border border-border"
+                  />
+                ) : (
+                  <span
+                    key={att.id}
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-xs"
+                  >
+                    <FileIcon className="size-3 text-muted-foreground" />
+                    <span className="max-w-[120px] truncate">{att.name}</span>
+                  </span>
+                )
               ))}
             </div>
           )}

@@ -24,7 +24,7 @@ export async function handleAtlassianConnect(
   const authUrl = new URL("https://auth.atlassian.com/authorize");
   authUrl.searchParams.set("audience", "api.atlassian.com");
   authUrl.searchParams.set("client_id", env.ATLASSIAN_CLIENT_ID);
-  authUrl.searchParams.set("scope", "read:jira-work write:jira-work read:page:confluence write:page:confluence read:space:confluence offline_access");
+  authUrl.searchParams.set("scope", "read:jira-work write:jira-work read:board-scope:jira-software read:sprint:jira-software read:project:jira read:page:confluence write:page:confluence read:space:confluence offline_access");
   authUrl.searchParams.set("redirect_uri", env.ATLASSIAN_REDIRECT_URI);
   authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("response_type", "code");
