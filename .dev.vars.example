@@ -1,0 +1,27 @@
+# Slack
+SLACK_SIGNING_SECRET=
+SLACK_BOT_TOKEN=
+
+# Atlassian OAuth 2.0 (web chat — per-user auth)
+# Register an OAuth 2.0 app at https://developer.atlassian.com/console/myapps/
+# Required scopes: read:jira-work, read:confluence-content.all, offline_access
+ATLASSIAN_CLIENT_ID=your-client-id-here
+ATLASSIAN_CLIENT_SECRET=your-client-secret-here
+ATLASSIAN_REDIRECT_URI=https://your-domain/api/auth/atlassian/callback
+
+# Jira / Confluence — Legacy Basic Auth (used by Slack bot queue consumer)
+# Note: JIRA_BASE_URL and CONFLUENCE_BASE_URL are no longer used for web-chat (OAuth uses api.atlassian.com)
+JIRA_BASE_URL=https://your-domain.atlassian.net
+JIRA_EMAIL=your-email@company.com
+JIRA_API_TOKEN=
+CONFLUENCE_BASE_URL=https://your-domain.atlassian.net
+
+# LLM
+OPENAI_API_KEY=
+LLM_PROVIDER=openai
+# Only needed if LLM_PROVIDER=anthropic
+# ANTHROPIC_API_KEY=
+
+# Chat auth
+AUTH_TEAM_PASSWORD=
+AUTH_SECRET=
