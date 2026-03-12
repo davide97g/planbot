@@ -119,6 +119,16 @@ export interface Env {
   AUTH_SECRET: string;
   AUTH_TEAM_PASSWORD: string;
   LLM_PROVIDER: string;
+  ATLASSIAN_CLIENT_ID: string;
+  ATLASSIAN_CLIENT_SECRET: string;
+  ATLASSIAN_REDIRECT_URI: string;
+}
+
+export interface AtlassianTokenData {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number; // unix seconds
+  cloudId: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,6 +192,7 @@ export interface ToolResult {
 
 export interface AgentContext {
   env: Env;
+  userId?: string;
   conversationId: string;
   messages: ChatMessage[];
   abortSignal?: AbortSignal;
