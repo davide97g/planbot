@@ -102,6 +102,17 @@ export async function* runAgent(
         data: { result, agentName: agent.name },
       };
 
+      // Emit task_create event for the frontend task sidebar
+      if (toolCall.name === "create_task" && !result.isError) {
+        const taskResult = result.result as { title?: string };
+        if (taskResult?.title) {
+          yield {
+            type: "task_create",
+            data: { title: taskResult.title },
+          };
+        }
+      }
+
       // Append tool result to messages
       llmMessages.push({
         role: "tool",

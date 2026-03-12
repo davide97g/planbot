@@ -54,11 +54,15 @@ export interface UseChatReturn {
   totalTokenUsage: TokenUsage;
 }
 
+export interface UseChatOptions {
+  onTaskCreate?: (title: string) => void;
+}
+
 function generateId(): string {
   return Math.random().toString(36).substring(2, 15);
 }
 
-export function useChat(): UseChatReturn {
+export function useChat(options?: UseChatOptions): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
@@ -165,6 +169,7 @@ export function useChat(): UseChatReturn {
           body: JSON.stringify({
             conversationId: conversationId || undefined,
             message: text,
+            model: localStorage.getItem("planbot_model") || undefined,
           }),
           signal: abort.signal,
         });
@@ -308,6 +313,12 @@ export function useChat(): UseChatReturn {
                           : m
                       )
                     );
+                  }
+                  break;
+
+                case "task_create":
+                  if (data.title && options?.onTaskCreate) {
+                    options.onTaskCreate(data.title);
                   }
                   break;
 

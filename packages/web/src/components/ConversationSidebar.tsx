@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -11,13 +12,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   PlusIcon,
   Trash2Icon,
   PencilIcon,
   MessageSquareIcon,
   PanelLeftCloseIcon,
+  PanelLeftIcon,
   LogOutIcon,
   Loader2Icon,
+  SettingsIcon,
 } from "lucide-react";
 import { clearToken } from "@/lib/auth";
 import { PlanBotLogo } from "./PlanBotLogo";
@@ -36,9 +45,10 @@ interface ConversationSidebarProps {
   onNew: () => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
-  onCollapse: () => void;
   onLogout: () => void;
   atlassianStatus: AtlassianStatus;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 const AtlassianIcon = ({ className }: { className?: string }) => (
@@ -55,17 +65,17 @@ const AtlassianIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-function AtlassianButton({ status }: { status: AtlassianStatus }) {
+function AtlassianButton({ status, collapsed }: { status: AtlassianStatus; collapsed: boolean }) {
   if (status.loading) {
     return (
       <Button
         variant="ghost"
-        className="w-full justify-start gap-2 text-muted-foreground"
+        className={collapsed ? "w-full justify-center" : "w-full justify-start gap-2 text-muted-foreground"}
         size="sm"
         disabled
       >
         <Loader2Icon className="size-4 animate-spin opacity-50" />
-        Atlassian…
+        {!collapsed && "Atlassian…"}
       </Button>
     );
   }
@@ -74,12 +84,12 @@ function AtlassianButton({ status }: { status: AtlassianStatus }) {
     return (
       <Button
         variant="ghost"
-        className="w-full justify-start gap-2 text-destructive"
+        className={collapsed ? "w-full justify-center" : "w-full justify-start gap-2 text-destructive"}
         size="sm"
         onClick={status.connected ? status.disconnect : status.connect}
       >
         <AtlassianIcon className="size-4" />
-        {status.error}
+        {!collapsed && status.error}
       </Button>
     );
   }
@@ -88,12 +98,12 @@ function AtlassianButton({ status }: { status: AtlassianStatus }) {
     return (
       <Button
         variant="ghost"
-        className="w-full justify-start gap-2 text-green-600 hover:text-red-600 hover:bg-red-50"
+        className={collapsed ? "w-full justify-center" : "w-full justify-start gap-2 text-green-600 hover:text-red-600 hover:bg-red-50"}
         size="sm"
         onClick={status.disconnect}
       >
         <AtlassianIcon className="size-4" />
-        Atlassian connected
+        {!collapsed && "Atlassian connected"}
       </Button>
     );
   }
@@ -101,12 +111,12 @@ function AtlassianButton({ status }: { status: AtlassianStatus }) {
   return (
     <Button
       variant="ghost"
-      className="w-full justify-start gap-2 text-muted-foreground border border-dashed"
+      className={collapsed ? "w-full justify-center" : "w-full justify-start gap-2 text-muted-foreground border border-dashed"}
       size="sm"
       onClick={status.connect}
     >
       <AtlassianIcon className="size-4" />
-      Connect Atlassian
+      {!collapsed && "Connect Atlassian"}
     </Button>
   );
 }
@@ -133,10 +143,12 @@ export function ConversationSidebar({
   onNew,
   onDelete,
   onRename,
-  onCollapse,
   onLogout,
   atlassianStatus,
+  collapsed,
+  onToggleCollapse,
 }: ConversationSidebarProps) {
+  const navigate = useNavigate();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -166,6 +178,83 @@ export function ConversationSidebar({
     }
   };
 
+  // Collapsed icon rail view
+  if (collapsed) {
+    return (
+      <TooltipProvider delay={200}>
+        <div className="flex h-full w-12 flex-col items-center border-r border-border bg-card py-3 gap-2">
+          <Tooltip>
+            <TooltipTrigger
+              onClick={onToggleCollapse}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+            >
+              <PanelLeftIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipContent side="right">Expand sidebar</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger
+              onClick={onNew}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+            >
+              <PlusIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipContent side="right">New chat</TooltipContent>
+          </Tooltip>
+
+          <Separator className="my-1 w-6" />
+
+          <ScrollArea className="flex-1 w-full">
+            <div className="flex flex-col items-center gap-1 px-1">
+              {conversations.map((conv) => (
+                <Tooltip key={conv.id}>
+                  <TooltipTrigger
+                    onClick={() => onSelect(conv.id)}
+                    className={`flex h-8 w-8 items-center justify-center rounded-md text-xs font-medium transition-colors ${
+                      activeId === conv.id
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <MessageSquareIcon className="size-4" />
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{conv.title || "Untitled"}</TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </ScrollArea>
+
+          <div className="flex flex-col items-center gap-1 mt-auto">
+            <Separator className="mb-1 w-6" />
+            <Tooltip>
+              <TooltipTrigger
+                onClick={() => navigate("/settings")}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+              >
+                <SettingsIcon className="size-4" />
+              </TooltipTrigger>
+              <TooltipContent side="right">Settings</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                onClick={() => {
+                  clearToken();
+                  onLogout();
+                }}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+              >
+                <LogOutIcon className="size-4" />
+              </TooltipTrigger>
+              <TooltipContent side="right">Sign out</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      </TooltipProvider>
+    );
+  }
+
+  // Expanded view
   return (
     <div className="flex h-full w-70 flex-col border-r border-border bg-card">
       {/* Header */}
@@ -174,7 +263,7 @@ export function ConversationSidebar({
           <PlanBotLogo className="size-5 rounded" />
           <h2 className="text-sm font-semibold">PlanBot</h2>
         </div>
-        <Button variant="ghost" size="icon-xs" onClick={onCollapse}>
+        <Button variant="ghost" size="icon-xs" onClick={onToggleCollapse}>
           <PanelLeftCloseIcon className="size-4" />
         </Button>
       </div>
@@ -266,10 +355,19 @@ export function ConversationSidebar({
         </div>
       </ScrollArea>
 
-      {/* Footer with logout */}
+      {/* Footer */}
       <Separator />
       <div className="p-3 flex flex-col gap-1">
-        <AtlassianButton status={atlassianStatus} />
+        <AtlassianButton status={atlassianStatus} collapsed={false} />
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-2 text-muted-foreground"
+          size="sm"
+          onClick={() => navigate("/settings")}
+        >
+          <SettingsIcon className="size-4" />
+          Settings
+        </Button>
         <Button
           variant="ghost"
           className="w-full justify-start gap-2 text-muted-foreground"

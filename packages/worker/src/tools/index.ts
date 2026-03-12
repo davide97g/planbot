@@ -6,6 +6,7 @@ import { tools as capacityTools, executeTool as executeCapacityTool } from "./ca
 import { tools as plannerTools, executeTool as executePlannerTool } from "./planner";
 import { tools as excelTools, executeTool as executeExcelTool } from "./excel";
 import { tools as slackTools, executeTool as executeSlackTool } from "./slack";
+import { tools as taskTools, executeTool as executeTaskTool } from "./tasks";
 
 // ---------------------------------------------------------------------------
 // All tool definitions — flat list for LLM function-calling schemas
@@ -18,6 +19,7 @@ export const allToolDefinitions: ToolDefinition[] = [
   ...plannerTools,
   ...excelTools,
   ...slackTools,
+  ...taskTools,
 ];
 
 // ---------------------------------------------------------------------------
@@ -30,6 +32,7 @@ const capacityToolNames = new Set(capacityTools.map((t) => t.name));
 const plannerToolNames = new Set(plannerTools.map((t) => t.name));
 const excelToolNames = new Set(excelTools.map((t) => t.name));
 const slackToolNames = new Set(slackTools.map((t) => t.name));
+const taskToolNames = new Set(taskTools.map((t) => t.name));
 
 // ---------------------------------------------------------------------------
 // executeToolCall — routes a ToolCall to the right module
@@ -57,6 +60,8 @@ export async function executeToolCall(
       result = await executeExcelTool(name, args, env);
     } else if (slackToolNames.has(name)) {
       result = await executeSlackTool(name, args, env);
+    } else if (taskToolNames.has(name)) {
+      result = await executeTaskTool(name, args);
     } else {
       throw new Error(`Unknown tool: ${name}`);
     }

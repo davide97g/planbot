@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 import { MentionPopover } from "./MentionPopover";
 import { ResourceSearchPopover } from "./ResourceSearchPopover";
+import { ChannelPopover } from "./ChannelPopover";
 import {
   ResourceChip,
   encodeResourceTag,
@@ -13,14 +14,18 @@ import { useSlashCommands } from "@/hooks/useSlashCommands";
 import { useMentions } from "@/hooks/useMentions";
 import { useResourceSearch } from "@/hooks/useResourceSearch";
 import type { ResourceResult } from "@/hooks/useResourceSearch";
+import type { Task } from "@/hooks/useTaskStore";
+import type { UseSlackChannelsReturn } from "@/hooks/useSlackChannels";
 import { SendIcon } from "lucide-react";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
   isStreaming: boolean;
+  tasks?: Task[];
+  slackChannels?: UseSlackChannelsReturn;
 }
 
-export function ChatInput({ onSend, isStreaming }: ChatInputProps) {
+export function ChatInput({ onSend, isStreaming, tasks = [], slackChannels }: ChatInputProps) {
   const [value, setValue] = useState("");
   const [taggedResources, setTaggedResources] = useState<TaggedResource[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -28,13 +33,16 @@ export function ChatInput({ onSend, isStreaming }: ChatInputProps) {
   const mentions = useMentions();
   const resourceSearch = useResourceSearch();
   const [showMentions, setShowMentions] = useState(false);
+  const [showChannels, setShowChannels] = useState(false);
+  const [channelResults, setChannelResults] = useState<{ id: string; name: string }[]>([]);
+  const [showTaskMentions, setShowTaskMentions] = useState(false);
+  const [taskResults, setTaskResults] = useState<Task[]>([]);
 
   const handleSend = useCallback(() => {
     const text = value.trim();
     if (!text && taggedResources.length === 0) return;
     if (isStreaming) return;
 
-    // Build final message: resource tags + user text
     const tagTokens = taggedResources.map(encodeResourceTag);
     const parts = [...tagTokens, text].filter(Boolean);
     onSend(parts.join(" "));
@@ -45,6 +53,8 @@ export function ChatInput({ onSend, isStreaming }: ChatInputProps) {
     mentions.clear();
     resourceSearch.dismiss();
     setShowMentions(false);
+    setShowChannels(false);
+    setShowTaskMentions(false);
   }, [value, taggedResources, isStreaming, onSend, slash, mentions, resourceSearch]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -98,8 +108,9 @@ export function ChatInput({ onSend, isStreaming }: ChatInputProps) {
       mentions.clear();
       resourceSearch.dismiss();
       setShowMentions(false);
+      setShowChannels(false);
+      setShowTaskMentions(false);
     }
-    // Backspace on empty input removes last tagged resource
     if (e.key === "Backspace" && value === "" && taggedResources.length > 0) {
       setTaggedResources((prev) => prev.slice(0, -1));
     }
@@ -125,45 +136,76 @@ export function ChatInput({ onSend, isStreaming }: ChatInputProps) {
       slash.deactivate();
     }
 
-    // Mention detection: find @ followed by text near the cursor
+    // Channel detection: # followed by text
     if (!resourceSearch.isActive) {
       const cursorPos = e.target.selectionStart;
       const textBeforeCursor = newValue.slice(0, cursorPos);
-      const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
-      if (mentionMatch) {
-        const query = mentionMatch[1];
-        if (query.length >= 1) {
-          setShowMentions(true);
-          mentions.search(query, "jira");
-        } else {
-          setShowMentions(true);
-          mentions.clear();
-        }
+      const channelMatch = textBeforeCursor.match(/#(\w*)$/);
+      if (channelMatch && slackChannels) {
+        const query = channelMatch[1];
+        setShowChannels(true);
+        setChannelResults(slackChannels.search(query).slice(0, 8));
+        setShowMentions(false);
+        setShowTaskMentions(false);
       } else {
+        setShowChannels(false);
+        setChannelResults([]);
+      }
+    }
+
+    // Mention / task detection
+    if (!resourceSearch.isActive && !showChannels) {
+      const cursorPos = e.target.selectionStart;
+      const textBeforeCursor = newValue.slice(0, cursorPos);
+
+      // Task mention: @task: prefix
+      const taskMatch = textBeforeCursor.match(/@task:(\w*)$/i);
+      if (taskMatch) {
+        const query = taskMatch[1].toLowerCase();
+        const filtered = query
+          ? tasks.filter((t) => t.title.toLowerCase().includes(query))
+          : tasks.filter((t) => !t.done);
+        setTaskResults(filtered.slice(0, 8));
+        setShowTaskMentions(true);
         setShowMentions(false);
         mentions.clear();
+      } else {
+        setShowTaskMentions(false);
+        setTaskResults([]);
+
+        // Regular @ mention
+        const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
+        if (mentionMatch) {
+          const query = mentionMatch[1];
+          if (query.length >= 1) {
+            setShowMentions(true);
+            mentions.search(query, "jira");
+          } else {
+            setShowMentions(true);
+            mentions.clear();
+          }
+        } else {
+          setShowMentions(false);
+          mentions.clear();
+        }
       }
     }
   };
 
   const selectResource = (result: ResourceResult) => {
-    // Add to tagged resources (avoid duplicates)
     setTaggedResources((prev) => {
       if (prev.some((r) => r.id === result.id)) return prev;
       if (result.issueType) {
-        // Jira resource
         return [
           ...prev,
           { id: result.id, resourceType: "jira" as const, issueType: result.issueType, display: result.display },
         ];
       }
-      // Confluence resource
       return [
         ...prev,
         { id: result.id, resourceType: "confluence" as const, display: result.display },
       ];
     });
-    // Clear input and dismiss search
     setValue("");
     resourceSearch.dismiss();
     slash.deactivate();
@@ -185,6 +227,28 @@ export function ChatInput({ onSend, isStreaming }: ChatInputProps) {
     setValue(replaced + textAfterCursor);
     setShowMentions(false);
     mentions.clear();
+    textareaRef.current?.focus();
+  };
+
+  const handleChannelSelect = (channel: { id: string; name: string }) => {
+    const cursorPos = textareaRef.current?.selectionStart ?? value.length;
+    const textBeforeCursor = value.slice(0, cursorPos);
+    const textAfterCursor = value.slice(cursorPos);
+    const replaced = textBeforeCursor.replace(/#\w*$/, `#${channel.name} `);
+    setValue(replaced + textAfterCursor);
+    setShowChannels(false);
+    setChannelResults([]);
+    textareaRef.current?.focus();
+  };
+
+  const handleTaskSelect = (task: Task) => {
+    const cursorPos = textareaRef.current?.selectionStart ?? value.length;
+    const textBeforeCursor = value.slice(0, cursorPos);
+    const textAfterCursor = value.slice(cursorPos);
+    const replaced = textBeforeCursor.replace(/@task:\w*$/i, `[T:${task.id}:${task.title}] `);
+    setValue(replaced + textAfterCursor);
+    setShowTaskMentions(false);
+    setTaskResults([]);
     textareaRef.current?.focus();
   };
 
@@ -232,6 +296,37 @@ export function ChatInput({ onSend, isStreaming }: ChatInputProps) {
               onSelect={handleMentionSelect}
             />
           )}
+        {showChannels && channelResults.length > 0 && (
+          <ChannelPopover
+            channels={channelResults}
+            isLoading={slackChannels?.isLoading ?? false}
+            onSelect={handleChannelSelect}
+          />
+        )}
+        {showTaskMentions && taskResults.length > 0 && (
+          <div className="absolute bottom-full left-0 z-50 mb-2 w-80">
+            <div className="rounded-lg border border-border bg-popover shadow-lg">
+              <div className="p-1">
+                {taskResults.map((task) => (
+                  <button
+                    key={task.id}
+                    onClick={() => handleTaskSelect(task)}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent transition-colors"
+                  >
+                    <div
+                      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border ${
+                        task.done ? "border-primary bg-primary" : "border-border"
+                      }`}
+                    />
+                    <span className={`truncate ${task.done ? "text-muted-foreground line-through" : ""}`}>
+                      {task.title}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
         {/* Tagged resource chips */}
         {taggedResources.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
@@ -255,7 +350,7 @@ export function ChatInput({ onSend, isStreaming }: ChatInputProps) {
             placeholder={
               taggedResources.length > 0
                 ? "Add a message or press Enter to send..."
-                : "Type a message... (/ for commands, @ for mentions)"
+                : "Type a message... (/ commands, @ mentions, # channels)"
             }
             className="min-h-10 max-h-40 resize-none"
             rows={1}

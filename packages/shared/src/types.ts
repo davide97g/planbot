@@ -218,7 +218,8 @@ export type SSEEvent =
   | { type: "agent_switch"; data: { from: string; to: string } }
   | { type: "done"; data: { message: ChatMessage } }
   | { type: "error"; data: { message: string; code?: string } }
-  | { type: "title_update"; data: { title: string } };
+  | { type: "title_update"; data: { title: string } }
+  | { type: "task_create"; data: { title: string } };
 
 // ---------------------------------------------------------------------------
 // LLM Provider types

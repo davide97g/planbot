@@ -469,6 +469,42 @@ export async function routeRequest(
       return corsResponse(await handleDemoGenerate(request, env, userId));
     }
 
+    // GET /api/slack/channels — list Slack channels for # autocomplete
+    if (path === "/api/slack/channels" && method === "GET") {
+      try {
+        if (!env.SLACK_BOT_TOKEN) {
+          return corsJson({ channels: [] });
+        }
+        const res = await fetch(
+          "https://slack.com/api/conversations.list?types=public_channel&limit=200&exclude_archived=true",
+          { headers: { Authorization: `Bearer ${env.SLACK_BOT_TOKEN}` } },
+        );
+        const data = (await res.json()) as {
+          ok: boolean;
+          channels?: { id: string; name: string }[];
+          error?: string;
+        };
+        if (!data.ok) {
+          return corsJson({ channels: [], error: data.error });
+        }
+        const channels = (data.channels || []).map((c) => ({
+          id: c.id,
+          name: c.name,
+        }));
+        return corsJson({ channels });
+      } catch {
+        return corsJson({ channels: [] });
+      }
+    }
+
+    // GET /api/settings — return LLM provider info
+    if (path === "/api/settings" && method === "GET") {
+      return corsJson({
+        provider: env.LLM_PROVIDER || "openai",
+        model: env.LLM_PROVIDER === "anthropic" ? "claude-sonnet-4-5-20250514" : "gpt-4o",
+      });
+    }
+
     return corsJson({ error: "Not Found" }, 404);
   }
 

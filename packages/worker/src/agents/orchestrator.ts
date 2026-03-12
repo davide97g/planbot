@@ -13,6 +13,7 @@ import { createJiraAgent } from "./jira-agent";
 import { createConfluenceAgent } from "./confluence-agent";
 import { createReportingAgent } from "./reporting";
 import { runAgent } from "./runner";
+import { tools as taskTools, executeTool as executeTaskTool } from "../tools/tasks";
 
 // ---------------------------------------------------------------------------
 // Delegation tools (orchestrator-only, not in the shared tool system)
@@ -92,6 +93,8 @@ You can answer simple questions directly, but for specialized tasks you should d
 
 When delegating, provide clear context about what the user needs. Include any specific details like version names, sprint names, team names, JQL queries, or date ranges.
 
+You also have a **create_task** tool to add action items to the user's task sidebar. Use it when the user explicitly asks to create tasks, or when generating plans with clear actionable steps. Each call creates one task.
+
 For general questions about your capabilities, greetings, or simple follow-ups, respond directly without delegating.
 
 ## Output format rules
@@ -122,7 +125,7 @@ export function createOrchestrator(): Agent {
     name: "orchestrator",
     description: "Routes user requests to specialist agents",
     systemPrompt: SYSTEM_PROMPT,
-    tools: orchestratorTools,
+    tools: [...orchestratorTools, ...taskTools],
 
     async *run(context: AgentContext): AsyncIterable<SSEEvent> {
       const provider = createLLMProvider(context.env);
@@ -187,8 +190,43 @@ export function createOrchestrator(): Agent {
           return;
         }
 
-        // Process delegation tool calls
+        // Process tool calls (delegation + create_task)
         for (const toolCall of toolCalls) {
+          // Handle create_task directly
+          if (toolCall.name === "create_task") {
+            const args = toolCall.arguments as Record<string, unknown>;
+            const result = await executeTaskTool("create_task", args);
+            const taskResult = result as { title?: string };
+
+            yield {
+              type: "tool_call_start",
+              data: { toolCall, agentName: "orchestrator" },
+            };
+            yield {
+              type: "tool_call_result",
+              data: {
+                result: { toolCallId: toolCall.id, name: "create_task", result },
+                agentName: "orchestrator",
+              },
+            };
+            if (taskResult?.title) {
+              yield { type: "task_create", data: { title: taskResult.title } };
+            }
+
+            llmMessages.push({
+              role: "assistant",
+              content: fullContent,
+              toolCalls: [toolCall],
+            });
+            llmMessages.push({
+              role: "tool",
+              content: JSON.stringify(result),
+              toolCallId: toolCall.id,
+            });
+            fullContent = "";
+            continue;
+          }
+
           const factory = DELEGATE_MAP[toolCall.name];
 
           if (!factory) {

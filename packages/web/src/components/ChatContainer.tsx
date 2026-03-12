@@ -1,24 +1,44 @@
 import { useEffect, useState } from "react";
 import { useChat } from "@/hooks/useChat";
 import { useAtlassianStatus } from "@/hooks/useAtlassianStatus";
+import { useTaskStore } from "@/hooks/useTaskStore";
+import { useSlackChannels } from "@/hooks/useSlackChannels";
 import { ConversationSidebar } from "./ConversationSidebar";
+import { TaskSidebar } from "./TaskSidebar";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PanelLeftIcon, CoinsIcon, DatabaseIcon } from "lucide-react";
+import { CoinsIcon, DatabaseIcon } from "lucide-react";
 import { PlanBotLogo } from "./PlanBotLogo";
 import { DemoDataDialog } from "./DemoDataDialog";
+
+const SIDEBAR_COLLAPSED_KEY = "planbot_sidebar_collapsed";
 
 interface ChatContainerProps {
   onLogout: () => void;
 }
 
 export function ChatContainer({ onLogout }: ChatContainerProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    return stored !== null ? stored === "true" : true; // default collapsed
+  });
   const [demoDialogOpen, setDemoDialogOpen] = useState(false);
-  const chat = useChat();
+  const taskStore = useTaskStore();
+  const chat = useChat({
+    onTaskCreate: (title) => taskStore.addTask(title, "ai"),
+  });
   const atlassianStatus = useAtlassianStatus();
+  const slackChannels = useSlackChannels();
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     chat.loadConversations();
@@ -30,41 +50,23 @@ export function ChatContainer({ onLogout }: ChatContainerProps) {
     }
   }, [chat.isStreaming, chat.conversationId]);
 
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 768px)");
-    if (mq.matches) setSidebarOpen(false);
-    const handler = (e: MediaQueryListEvent) => setSidebarOpen(!e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-
   return (
     <div className="flex h-screen bg-background">
-      {sidebarOpen && (
-        <ConversationSidebar
-          conversations={chat.conversations}
-          activeId={chat.conversationId}
-          onSelect={(id) => chat.loadConversation(id)}
-          onNew={chat.newConversation}
-          onDelete={(id) => chat.deleteConversation(id)}
-          onRename={(id, title) => chat.renameConversation(id, title)}
-          onCollapse={() => setSidebarOpen(false)}
-          onLogout={onLogout}
-          atlassianStatus={atlassianStatus}
-        />
-      )}
+      <ConversationSidebar
+        conversations={chat.conversations}
+        activeId={chat.conversationId}
+        onSelect={(id) => chat.loadConversation(id)}
+        onNew={chat.newConversation}
+        onDelete={(id) => chat.deleteConversation(id)}
+        onRename={(id, title) => chat.renameConversation(id, title)}
+        onLogout={onLogout}
+        atlassianStatus={atlassianStatus}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
+      />
 
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
         <header className="flex items-center gap-3 border-b border-border px-4 py-3">
-          {!sidebarOpen && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <PanelLeftIcon className="size-4" />
-            </Button>
-          )}
           <PlanBotLogo className="size-6 rounded-md" />
           <h1 className="text-sm font-semibold truncate">
             {chat.conversationTitle || "New conversation"}
@@ -101,8 +103,22 @@ export function ChatContainer({ onLogout }: ChatContainerProps) {
           </div>
         )}
 
-        <ChatInput onSend={chat.sendMessage} isStreaming={chat.isStreaming} />
+        <ChatInput
+          onSend={chat.sendMessage}
+          isStreaming={chat.isStreaming}
+          tasks={taskStore.tasks}
+          slackChannels={slackChannels}
+        />
       </div>
+
+      <TaskSidebar
+        tasks={taskStore.tasks}
+        onAdd={(title) => taskStore.addTask(title)}
+        onToggle={taskStore.toggleTask}
+        onDelete={taskStore.deleteTask}
+        onReorder={taskStore.reorderTasks}
+        onClearCompleted={taskStore.clearCompleted}
+      />
 
       <DemoDataDialog open={demoDialogOpen} onOpenChange={setDemoDialogOpen} />
     </div>
