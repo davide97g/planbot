@@ -81,7 +81,7 @@ export async function searchIssues(
   ];
 
   while (issues.length < MAX_ISSUES) {
-    const url = new URL(`https://api.atlassian.com/ex/jira/${auth.cloudId}/rest/api/3/search/jql`);
+    const url = new URL(`https://api.atlassian.com/ex/jira/${auth.cloudId}/rest/api/3/search`);
     url.searchParams.set("jql", jql);
     url.searchParams.set("startAt", String(startAt));
     url.searchParams.set("maxResults", String(MAX_RESULTS));
