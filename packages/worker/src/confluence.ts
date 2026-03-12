@@ -1,7 +1,9 @@
 import type { ConfluencePage, Env } from "./types";
 
-function authHeader(env: Env): string {
-  return "Basic " + btoa(`${env.JIRA_EMAIL}:${env.JIRA_API_TOKEN}`);
+type AtlassianAuth = { accessToken: string; cloudId: string };
+
+function authHeader(token: string): string {
+  return `Bearer ${token}`;
 }
 
 export function stripHtml(html: string): string {
@@ -25,16 +27,20 @@ interface ConfluenceSearchResponse {
   }[];
 }
 
-export async function searchPages(cql: string, env: Env): Promise<ConfluencePage[]> {
+export async function searchPages(
+  cql: string,
+  env: Env,
+  auth: AtlassianAuth,
+): Promise<ConfluencePage[]> {
   try {
-    const url = new URL(`${env.CONFLUENCE_BASE_URL}/wiki/rest/api/content`);
+    const url = new URL(`https://api.atlassian.com/ex/confluence/${auth.cloudId}/wiki/rest/api/content`);
     url.searchParams.set("cql", cql);
     url.searchParams.set("expand", "body.storage,metadata.labels");
     url.searchParams.set("limit", "10");
 
     const res = await fetch(url.toString(), {
       headers: {
-        Authorization: authHeader(env),
+        Authorization: authHeader(auth.accessToken),
         Accept: "application/json",
       },
     });
@@ -54,14 +60,18 @@ export async function searchPages(cql: string, env: Env): Promise<ConfluencePage
   }
 }
 
-export async function getPageById(pageId: string, env: Env): Promise<ConfluencePage | null> {
+export async function getPageById(
+  pageId: string,
+  env: Env,
+  auth: AtlassianAuth,
+): Promise<ConfluencePage | null> {
   try {
-    const url = new URL(`${env.CONFLUENCE_BASE_URL}/wiki/rest/api/content/${pageId}`);
+    const url = new URL(`https://api.atlassian.com/ex/confluence/${auth.cloudId}/wiki/rest/api/content/${pageId}`);
     url.searchParams.set("expand", "body.storage,metadata.labels");
 
     const res = await fetch(url.toString(), {
       headers: {
-        Authorization: authHeader(env),
+        Authorization: authHeader(auth.accessToken),
         Accept: "application/json",
       },
     });
