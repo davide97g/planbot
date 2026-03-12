@@ -234,10 +234,12 @@ export async function handleChat(
         // Save conversation to KV
         await saveConversation(conversation, env);
 
-        // Send final metadata
+        // Send final metadata (includes conversationId so the client can track it)
         send({
           type: "done",
           data: {
+            conversationId: conversation.id,
+            title: conversation.title,
             message: {
               id: "__conversation_meta",
               role: "assistant",
