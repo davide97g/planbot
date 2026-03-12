@@ -3,4 +3,4 @@ dist/
 .dev.vars
 .wrangler/
 *.log
-.env
+.env.worktrees/
